@@ -31,6 +31,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import jp.ikegami.roastscale.data.Measurement
 import jp.ikegami.roastscale.data.Profile
+import jp.ikegami.roastscale.data.ReferenceGuide
+import jp.ikegami.roastscale.data.ReferenceBand
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -171,12 +173,26 @@ private fun date(millis: Long): String =
     SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(Date(millis))
 
 @Composable
-private fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
+private fun Metric(
+    label: String,
+    value: String,
+    reference: ReferenceBand,
+    measured: Double?,
+    modifier: Modifier = Modifier
+) {
     Column(modifier.padding(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = Muted)
         Spacer(Modifier.height(6.dp))
         Text(value, style = MaterialTheme.typography.titleLarge, color = Color.White,
             fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text("目安: " + reference.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = when (reference.inRange(measured)) {
+                true -> Accent
+                false -> Purple
+                null -> Muted
+            })
     }
 }
 
@@ -191,7 +207,36 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
             .padding(horizontal = 18.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(15.dp)
     ) {
-        TitleBlock("ROAST SCALE", "YOUR SCALE. YOUR DATA. NO EXCUSES.")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("ROAST SCALE",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.ExtraBold, color = Color.White)
+                Text(
+                    if (state.scanning) "● BLE受信中" else "YOUR SCALE. YOUR DATA. NO EXCUSES.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (state.scanning) Accent else Muted
+                )
+            }
+            FilledIconButton(
+                onClick = if (state.scanning) onStop else onStart,
+                modifier = Modifier.size(54.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = if (state.scanning) Purple else Accent,
+                    contentColor = Night
+                )
+            ) {
+                Text(if (state.scanning) "停止" else "BLE",
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (state.scanning || state.status.startsWith("スキャンエラー") ||
+            state.status.startsWith("BLE受信ゼロ")) {
+            Text(state.status, color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -212,95 +257,48 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
                     Text("前回比", style = MaterialTheme.typography.labelSmall, color = Muted)
                 }
             }
+            Text("目安: " + ReferenceGuide.weight(state.profile).label,
+                color = if (ReferenceGuide.weight(state.profile).inRange(recent?.weightKg) == true) Accent else Muted,
+                style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(18.dp))
             TrendBars(state.measurements)
             Spacer(Modifier.height(10.dp))
             HorizontalDivider(color = Color(0xFF334052))
             Spacer(Modifier.height(10.dp))
             Row {
-                Metric("BMI", format(recent?.composition?.bmi), Modifier.weight(1f))
-                Metric("体脂肪率（推定）", format(recent?.composition?.fatPercent, " %"), Modifier.weight(1f))
-            }
-            Row {
-                Metric("筋肉量（推定）", format(recent?.composition?.muscleKg, " kg"), Modifier.weight(1f))
-                Metric("体水分率（推定）", format(recent?.composition?.waterPercent, " %"), Modifier.weight(1f))
-            }
-            Row {
-                Metric("骨量（推定）", format(recent?.composition?.boneKg, " kg"), Modifier.weight(1f))
-                Metric("基礎代謝（推定）", format(recent?.composition?.bmrKcal, " kcal"), Modifier.weight(1f))
-            }
-            if (recent?.impedanceOhm != null) {
-                Text("インピーダンス " + recent.impedanceOhm + " Ω",
-                    color = Muted, style = MaterialTheme.typography.bodySmall)
-            }
-            Text("※体脂肪・筋肉量等は推定値です。医療用途には使用しないでください。",
-                color = Muted, style = MaterialTheme.typography.labelSmall)
-        }
-
-        Panel {
-            Text("BLUETOOTH / XMTZC02HM", color = Accent, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(state.status, color = Muted, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = if (state.scanning) onStop else onStart,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text(if (state.scanning) "測定を停止" else "BLE測定を開始") }
-            Text("体重が安定したら自動保存。ペアリング不要です。",
-                color = Muted, style = MaterialTheme.typography.labelSmall)
-        }
-
-        Panel {
-            Text("🔎 BLE受信診断", color = Accent, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            val d = state.bleDiagnostics
-            Text("端末: " + Build.MANUFACTURER + " " + Build.MODEL +
-                "  / Android " + Build.VERSION.RELEASE,
-                color = Muted, style = MaterialTheme.typography.bodySmall)
-            Text("位置情報: " + if (d.locationEnabled) "ON" else "OFF",
-                color = if (d.locationEnabled) Accent else Color(0xFFFFA58A))
-            Text("近くのデバイス: " + if (d.scanPermission && d.connectPermission) "許可" else "未許可",
-                color = if (d.scanPermission && d.connectPermission) Accent else Color(0xFFFFA58A))
-            Text("正確な位置情報: " + if (d.fineLocationPermission) "許可" else "未許可",
-                color = if (d.fineLocationPermission) Accent else Color(0xFFFFA58A))
-            Text("経過時間: " + d.secondsSinceStart + "秒  /  状態: " + d.lastResult,
-                color = Muted, style = MaterialTheme.typography.bodySmall)
-            if (!d.locationEnabled) {
-                Text("システムの位置情報がOFFです。BLEスキャン結果が返らないことがあります。",
-                    color = Color(0xFFFFA58A), style = MaterialTheme.typography.bodySmall)
-            }
-            OutlinedButton(onClick = {
-                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("端末の位置情報設定を開く")
+                Metric("BMI", format(recent?.composition?.bmi),
+                    ReferenceGuide.bmi(), recent?.composition?.bmi, Modifier.weight(1f))
+                Metric("体脂肪率（推定）", format(recent?.composition?.fatPercent, " %"),
+                    ReferenceGuide.fat(state.profile), recent?.composition?.fatPercent, Modifier.weight(1f))
             }
             Spacer(Modifier.height(8.dp))
-            Text("周辺BLE広告: " + state.bleDiagnostics.packets +
-                " 件  /  Xiaomi (181B): " + state.bleDiagnostics.scalePackets +
-                " 件  /  解析成功: " + state.bleDiagnostics.validPackets + " 件",
-                color = Color.White, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(6.dp))
-            if (state.bleDiagnostics.scalePackets > 0) {
-                Text("受信機器: " + state.bleDiagnostics.lastDevice, color = Muted)
-                Text("判定: " + state.bleDiagnostics.lastResult, color = Accent)
-                Text("生データ (HEX):", color = Muted,
-                    style = MaterialTheme.typography.labelSmall)
-                Text(state.bleDiagnostics.lastFrame, color = Color.White,
-                    style = MaterialTheme.typography.bodySmall)
-            } else if (state.bleDiagnostics.packets > 0) {
-                Text("周辺のBLE信号は受信中ですが、体組成計の広告は未検出です。計測中に端末を近づけてください。",
-                    color = Muted, style = MaterialTheme.typography.bodySmall)
-            } else {
-                Text("0件のままならBluetooth・近くのデバイス権限・端末の位置情報設定を確認してください。",
-                    color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row {
+                Metric("筋肉量（推定）", format(recent?.composition?.muscleKg, " kg"),
+                    ReferenceGuide.muscle(), recent?.composition?.muscleKg, Modifier.weight(1f))
+                Metric("体水分率（推定）", format(recent?.composition?.waterPercent, " %"),
+                    ReferenceGuide.water(state.profile), recent?.composition?.waterPercent, Modifier.weight(1f))
             }
-            if (state.bleDiagnostics.nearbyDevices.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text("近くのBLE機器", color = Muted, style = MaterialTheme.typography.labelSmall)
-                state.bleDiagnostics.nearbyDevices.forEach { item ->
-                    Text("• " + item, color = Muted, style = MaterialTheme.typography.bodySmall)
-                }
+            Spacer(Modifier.height(8.dp))
+            Row {
+                Metric("骨量（推定）", format(recent?.composition?.boneKg, " kg"),
+                    ReferenceGuide.bone(), recent?.composition?.boneKg, Modifier.weight(1f))
+                Metric("基礎代謝（推定）", format(recent?.composition?.bmrKcal, " kcal"),
+                    ReferenceGuide.bmr(), recent?.composition?.bmrKcal, Modifier.weight(1f))
             }
+            Spacer(Modifier.height(8.dp))
+            Row {
+                Metric("タンパク質率（推定）", format(recent?.composition?.proteinPercent, " %"),
+                    ReferenceGuide.protein(), recent?.composition?.proteinPercent, Modifier.weight(1f))
+                Metric("内臓脂肪指数（推定）", format(recent?.composition?.visceralIndex),
+                    ReferenceGuide.visceral(), recent?.composition?.visceralIndex, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+            Metric("インピーダンス（実測）",
+                if (recent?.impedanceOhm == null) "—" else recent.impedanceOhm.toString() + " Ω",
+                ReferenceGuide.impedance(), recent?.impedanceOhm?.toDouble())
+            Spacer(Modifier.height(4.dp))
+            Text("※BMI・体重以外は機器や推定式で差があります。目安は診断や減量指示ではありません。",
+                color = Muted, style = MaterialTheme.typography.labelSmall)
         }
 
         Panel {
