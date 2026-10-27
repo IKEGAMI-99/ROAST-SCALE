@@ -14,7 +14,7 @@ data class Measurement(
     val comment: String
 )
 
-class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scale.db", null, 1) {
+class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scale.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE measurements (
@@ -29,9 +29,24 @@ class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scal
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX idx_measurement_date ON measurements(measured_at DESC)")
+        createWaistTable(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    private fun createWaistTable(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS waist_measurements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                measured_at INTEGER NOT NULL,
+                waist_cm REAL NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_waist_date ON waist_measurements(measured_at DESC)")
+    }
+
+    // Database v1 had no waist table. Never drop or rewrite previous measurements.
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createWaistTable(db)
+    }
 
     // Null limit includes the entire history for the '全件' graph option.
     @Synchronized fun readings(limit: Int? = null): List<Measurement> {
@@ -106,6 +121,30 @@ class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scal
             "measurements", "id=?", arrayOf(id.toString())
         ) == 1
     }
+
+    @Synchronized fun waists(): List<WaistEntry> {
+        val result = mutableListOf<WaistEntry>()
+        readableDatabase.rawQuery(
+            "SELECT id, measured_at, waist_cm FROM waist_measurements ORDER BY measured_at DESC", null
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result.add(WaistEntry(cursor.getLong(0), cursor.getLong(1), cursor.getDouble(2)))
+            }
+        }
+        return result
+    }
+
+    @Synchronized fun addWaist(waistCm: Double): Boolean {
+        if (waistCm !in 30.0..200.0) return false
+        val values = ContentValues().apply {
+            put("measured_at", System.currentTimeMillis())
+            put("waist_cm", waistCm)
+        }
+        return writableDatabase.insert("waist_measurements", null, values) > 0
+    }
+
+    @Synchronized fun deleteWaist(id: Long): Boolean =
+        writableDatabase.delete("waist_measurements", "id=?", arrayOf(id.toString())) == 1
 
     @Synchronized fun saveComment(id: Long, comment: String) {
         writableDatabase.update("measurements", ContentValues().apply { put("comment", comment) },
