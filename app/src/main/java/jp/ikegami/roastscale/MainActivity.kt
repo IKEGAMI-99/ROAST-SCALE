@@ -182,6 +182,7 @@ private fun Metric(label: String, value: String, modifier: Modifier = Modifier) 
 
 @Composable
 private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Unit) {
+    val context = LocalContext.current
     val recent = state.measurements.firstOrNull()
     val previous = state.measurements.getOrNull(1)
     val delta = if (recent != null && previous != null) recent.weightKg - previous.weightKg else null
