@@ -1,6 +1,10 @@
 package jp.ikegami.roastscale.ble
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Build
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -20,7 +24,12 @@ data class BleDiagnostics(
     val lastDevice: String = "",
     val lastFrame: String = "",
     val lastResult: String = "スキャンを開始してください",
-    val nearbyDevices: List<String> = emptyList()
+    val nearbyDevices: List<String> = emptyList(),
+    val scanPermission: Boolean = false,
+    val connectPermission: Boolean = false,
+    val fineLocationPermission: Boolean = false,
+    val locationEnabled: Boolean = false,
+    val secondsSinceStart: Int = 0
 )
 
 /**
@@ -42,10 +51,40 @@ class ScaleScanner(
     private var scaleCount = 0
     private var validCount = 0
     private var lastEmitAt = 0L
+    private var startedAt = 0L
     private var lastDevice = ""
     private var lastFrame = ""
     private var lastResult = ""
     private val nearby = LinkedHashMap<String, String>()
+
+    /** Refreshes the zero-packet diagnosis even when Android never calls onScanResult. */
+    private val ticker = object : Runnable {
+        override fun run() {
+            if (!running) return
+            val elapsed = ((android.os.SystemClock.elapsedRealtime() - startedAt) / 1000L).toInt()
+            if (packetCount == 0 && elapsed >= 12) {
+                lastResult = "12秒以上、BLE受信ゼロ。位置情報・権限・Bluetoothを確認"
+                onStatus("BLE受信ゼロ。位置情報ON・正確な位置情報の許可を確認してください")
+            } else if (packetCount > 0 && scaleCount == 0 && elapsed >= 12) {
+                lastResult = "周辺機器は受信中。Xiaomi体組成計の広告は未検出"
+            }
+            emitDiagnostic(force = true)
+            handler.postDelayed(this, 3_000L)
+        }
+    }
+
+    private fun granted(permission: String): Boolean =
+        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun locationOn(): Boolean {
+        val location = context.getSystemService(LocationManager::class.java) ?: return false
+        return if (Build.VERSION.SDK_INT >= 28) location.isLocationEnabled
+        else location.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            location.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+
+    fun refreshEnvironment() { emitDiagnostic(force = true) }
+
 
     private fun hex(data: ByteArray): String = data.joinToString(" ") {
         "%02X".format(it.toInt() and 0xff)
@@ -82,7 +121,12 @@ class ScaleScanner(
                 lastDevice = lastDevice,
                 lastFrame = lastFrame,
                 lastResult = lastResult,
-                nearbyDevices = nearby.values.toList().takeLast(6)
+                nearbyDevices = nearby.values.toList().takeLast(6),
+                scanPermission = Build.VERSION.SDK_INT < 31 || granted(Manifest.permission.BLUETOOTH_SCAN),
+                connectPermission = Build.VERSION.SDK_INT < 31 || granted(Manifest.permission.BLUETOOTH_CONNECT),
+                fineLocationPermission = granted(Manifest.permission.ACCESS_FINE_LOCATION),
+                locationEnabled = locationOn(),
+                secondsSinceStart = if (running) ((now - startedAt) / 1000L).toInt().coerceAtLeast(0) else 0
             )
         )
     }
@@ -139,6 +183,7 @@ class ScaleScanner(
         override fun onScanFailed(errorCode: Int) {
             handler.post {
                 running = false
+                handler.removeCallbacks(ticker)
                 onStatus("スキャンエラー " + errorCode + "（Bluetoothを切り替えて再試行）")
                 lastResult = "Android BLEスキャンエラー " + errorCode
                 emitDiagnostic(force = true)
@@ -148,17 +193,31 @@ class ScaleScanner(
 
     @SuppressLint("MissingPermission")
     fun start(): Boolean {
-        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
-        if (adapter?.isEnabled != true) {
-            onStatus("BluetoothがOFFです。端末のBluetoothをONにしてください")
-            return false
-        }
-        val scanner = adapter.bluetoothLeScanner ?: run {
-            onStatus("BLEスキャナーが利用できません")
-            return false
-        }
         if (running) return true
+        if (!locationOn()) {
+            onStatus("端末の位置情報がOFFです。ONにしてください")
+            refreshEnvironment()
+            return false
+        }
+        if ((Build.VERSION.SDK_INT >= 31 && !granted(Manifest.permission.BLUETOOTH_SCAN)) ||
+            !granted(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            (Build.VERSION.SDK_INT >= 31 && !granted(Manifest.permission.BLUETOOTH_CONNECT))) {
+            onStatus("BLEまたは正確な位置情報の権限が不足しています")
+            refreshEnvironment()
+            return false
+        }
         return try {
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+            if (adapter?.isEnabled != true) {
+                onStatus("BluetoothがOFFです。端末のBluetoothをONにしてください")
+                refreshEnvironment()
+                return false
+            }
+            val scanner = adapter.bluetoothLeScanner ?: run {
+                onStatus("BLEスキャナーが利用できません")
+                refreshEnvironment()
+                return false
+            }
             packetCount = 0
             scaleCount = 0
             validCount = 0
@@ -166,6 +225,8 @@ class ScaleScanner(
             lastDevice = ""
             lastFrame = ""
             lastResult = "BLE広告を待機中"
+            // A null filter maximizes diagnostic visibility of all nearby BLE ads.
+            // Note: Android pauses unfiltered scans while the screen is off.
             scanner.startScan(
                 null,
                 ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -173,7 +234,10 @@ class ScaleScanner(
                 callback
             )
             running = true
-            onStatus("スキャン中。体組成計に乗り、表示が点滅するまで待ってください")
+            startedAt = android.os.SystemClock.elapsedRealtime()
+            handler.removeCallbacks(ticker)
+            handler.postDelayed(ticker, 3_000L)
+            onStatus("スキャン中。体組成計に乗り、表示が安定するまで待ってください")
             emitDiagnostic(force = true)
             true
         } catch (_: SecurityException) {
@@ -194,9 +258,11 @@ class ScaleScanner(
             } catch (_: Exception) { }
         }
         running = false
+        handler.removeCallbacks(ticker)
         pendingTask?.let(handler::removeCallbacks)
         pendingTask = null
         pending = null
         onStatus("測定停止")
+        emitDiagnostic(force = true)
     }
 }
