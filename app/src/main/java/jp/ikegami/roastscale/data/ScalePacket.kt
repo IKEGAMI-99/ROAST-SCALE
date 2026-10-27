@@ -1,21 +1,18 @@
 package jp.ikegami.roastscale.data
 
-/**
- * XMTZC02HM's 0x181B service-data advertisement (13 bytes).
- * Byte 1 flags: 0x20 stable, 0x02 impedance available, 0x80 load removed.
- * The scale repeats packets and may transmit impedance after stable weight.
- */
+/** XMTZC02HM / MIBCS: UUID 0x181B, 13-byte LE service data. */
 data class ScaleReading(val weightKg: Double, val impedanceOhm: Int?, val stabilized: Boolean)
 
 object ScalePacket {
     fun decode(data: ByteArray): ScaleReading? {
         if (data.size != 13) return null
-        val header = data[0].toInt() and 0xff
+        val unit = data[0].toInt() and 0xff
         val flags = data[1].toInt() and 0xff
-        if (header and 0x80 != 0 || flags and 0x80 != 0) return null
-        if (flags and 0x20 == 0) return null
-        // Only the kg scale mode is supported; do not silently mislabel lb or catty.
-        if (header and 0x10 != 0) return null
+        // On the original Mi Body Composition Scale 0x02 denotes kg units.
+        if (unit != 0x02) return null
+        if (flags and 0x20 == 0) return null // Not yet stabilized.
+        // IMPORTANT: 0x80 is "load removed". A FINAL VALID measurement
+        // can have flags 0xA6 (stable + impedance + load removed).
         val rawWeight = (data[11].toInt() and 0xff) or ((data[12].toInt() and 0xff) shl 8)
         val weight = rawWeight / 200.0
         if (weight !in 10.0..200.0) return null
@@ -24,5 +21,18 @@ object ScalePacket {
             flags and 0x02 != 0 && it in 100..3000
         }
         return ScaleReading(weight, impedance, true)
+    }
+
+    fun explain(data: ByteArray): String {
+        if (data.size != 13) return "不明なデータ長 " + data.size + " (期待13)"
+        val unit = data[0].toInt() and 0xff
+        val flags = data[1].toInt() and 0xff
+        val rawWeight = (data[11].toInt() and 0xff) or ((data[12].toInt() and 0xff) shl 8)
+        return when {
+            unit != 0x02 -> "未対応の重量単位 0x" + unit.toString(16)
+            flags and 0x20 == 0 -> "計量中（未安定） " + (rawWeight / 200.0) + " kg"
+            rawWeight / 200.0 !in 10.0..200.0 -> "体重値が範囲外"
+            else -> "有効な測定パケット"
+        }
     }
 }

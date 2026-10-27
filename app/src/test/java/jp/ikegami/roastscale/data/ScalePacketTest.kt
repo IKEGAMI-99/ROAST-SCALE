@@ -15,6 +15,19 @@ class ScalePacketTest {
         assertEquals(560, result.impedanceOhm)
     }
 
+    @Test fun acceptsStableWeightAfterSteppingOff() {
+        // Real-world captured Xiaomi frame with 0xA6: stabilized + impedance
+        // + scale unloaded. Previous versions erroneously discarded this.
+        val bytes = byteArrayOf(
+            0x02, 0xA6.toByte(), 0xB2.toByte(), 0x07, 0x01, 0x01,
+            0x12, 0x01, 0x12, 0x8C.toByte(), 0x01, 0xA8.toByte(), 0x52
+        )
+        val reading = ScalePacket.decode(bytes)
+        assertNotNull(reading)
+        assertEquals(105.8, reading!!.weightKg, 0.001)
+        assertEquals(396, reading.impedanceOhm)
+    }
+
     @Test fun rejectsUnstableAndInvalid() {
         assertNull(ScalePacket.decode(byteArrayOf(0x02, 0x00) + ByteArray(11)))
         assertNull(ScalePacket.decode(ByteArray(12)))
