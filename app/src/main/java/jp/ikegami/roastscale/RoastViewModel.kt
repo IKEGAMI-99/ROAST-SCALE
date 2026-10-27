@@ -61,6 +61,7 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
     val state = _state.asStateFlow()
 
     init {
+        scanner.refreshEnvironment()
         refresh()
         checkUpdate()
     }
