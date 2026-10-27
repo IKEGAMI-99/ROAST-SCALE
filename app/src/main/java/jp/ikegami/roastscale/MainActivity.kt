@@ -420,6 +420,11 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
             Text("GitHub Releases / アプリ更新", color = Accent, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text("現在: v" + BuildConfig.VERSION_NAME, color = Muted)
+            if (BuildConfig.DEBUG) {
+                Spacer(Modifier.height(6.dp))
+                Text("Debug版は署名が異なるため、正式版に上書き更新できません。初回のみDebug版を削除し、GitHub Releasesから正式版をインストールしてください。",
+                    color = Purple, style = MaterialTheme.typography.bodySmall)
+            }
             state.release?.let { release ->
                 Text("新版: " + release.tag, color = Color.White, fontWeight = FontWeight.Bold)
                 if (release.notes.isNotBlank()) {
@@ -434,7 +439,7 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
                 }
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.updateDownloading,
+                    enabled = !state.updateDownloading && !BuildConfig.DEBUG,
                     onClick = if (state.apkPath != null) vm::installUpdate else vm::downloadUpdate
                 ) {
                     Text(if (state.apkPath != null) "確認して上書きインストール"

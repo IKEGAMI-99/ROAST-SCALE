@@ -11,3 +11,10 @@ local.properties
 *.litertlm
 *.part
 .DS_Store
+
+# Private signing material
+*.p12
+*.pfx
+*.pem
+*.key
+*SIGNING*SECRETS*.txt

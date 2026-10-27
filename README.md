@@ -30,32 +30,52 @@ On first run:
 
 Only foreground scanning is implemented. There is no always-on background scanner.
 
-## Signing / release setup
+## Signed Releases and in-app updates
 
-The Android signing key is fixed across versions but NEVER placed in the APK or git repository.
+GitHub Actions builds an APK on each push to `main` and publishes a newer
+`vMAJOR.MINOR.PATCH` GitHub Release **only if the four signing secrets below exist**.
+You can also run the workflow from Actions → Android CI and GitHub Releases →
+Run workflow (main). No manual git tag is required; release assets are
+`roast-scale.apk` and `roast-scale.apk.sha256`.
 
-Generate your own keystore once, and back it up offline:
+The private signing key **must not be embedded in the APK or committed to this
+public source repository**. Android only requires the APK *signature* to remain
+the same across versions. Set these repository **Actions secrets**:
 
-    keytool -genkeypair -v -keystore roast-release.jks -alias roast -keyalg RSA -keysize 3072 -validity 10000
+1. `SIGNING_KEYSTORE_BASE64`: base64 encoded PKCS12 or JKS file contents.
+2. `SIGNING_STORE_PASSWORD`: keystore password.
+3. `SIGNING_KEY_PASSWORD`: signing key password.
+4. `SIGNING_KEY_ALIAS`: key alias.
 
-In GitHub repository Settings → Secrets and variables → Actions, configure four secrets:
+Configure at https://github.com/IKEGAMI-99/ROAST-SCALE/settings/secrets/actions
+The signed-release job will print a clear error if any secret is missing.
 
-- SIGNING_KEYSTORE_BASE64 (base64 encoded JKS contents)
-- SIGNING_STORE_PASSWORD
-- SIGNING_KEY_PASSWORD
-- SIGNING_KEY_ALIAS
+Generate once with keytool if needed:
 
-To encode the keystore on Linux:
+    keytool -genkeypair -noprompt -storetype PKCS12 -keystore roast-release.p12 -alias roast -keyalg RSA -keysize 3072 -validity 11000 -dname "CN=ROAST SCALE,C=JP"
 
-    base64 -w 0 roast-release.jks
+Then encode:
 
-On macOS:
+    base64 -w 0 roast-release.p12   # Linux
+    base64 < roast-release.p12 | tr -d '\n'  # macOS
 
-    base64 < roast-release.jks | tr -d '\n'
+Back up the keystore. Never replace the keystore on later releases. Once
+GitHub Releases contains the first signed APK, install that official build.
+**Existing Actions debug builds cannot be upgraded in place**: Android
+requires a matching signing certificate, so uninstall the old debug APK first
+(app data will be erased). Starting with the *signed release* version,
+all later versions from this workflow use the same key and can be installed
+through the in-app Settings → Update control.
 
-Push tag v0.1.0. On successful test and release jobs, the workflow publishes roast-scale.apk and roast-scale.apk.sha256 in Releases. Later versions should use monotonically increasing vMAJOR.MINOR.PATCH, with minor/patch less than 100, to generate increasing Android versionCodes. Always reuse the same keystore. The initial tag should correspond to the code in main.
+The updater reads the public latest release, verifies APK SHA-256, checks the
+package name and version, then uses the Android package installer. Android
+performs signature validation and asks for installation approval. The update
+may also require enabling "Allow from this source" for the app.
 
-In-app checks use the public GitHub Releases REST API. A private repository requires a different authenticated update mechanism. Installing any APK requires user confirmation and Android enforces matching APK signing certificates.
+**Security note:** A short-lived personal test signing keystore was briefly
+committed during setup and then removed; do not use or trust that exposed test
+key. Use a freshly generated private signing identity via GitHub Actions
+Secrets, as described above.
 
 ## Model and metrics
 
