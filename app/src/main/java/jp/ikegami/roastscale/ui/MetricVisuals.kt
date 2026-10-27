@@ -68,7 +68,8 @@ fun MetricMeter(
     current: Measurement?,
     history: List<Measurement>,
     profile: Profile,
-    showTitle: Boolean = true
+    showTitle: Boolean = true,
+    compact: Boolean = false
 ) {
     val value = current?.let(metric.value)
     val reference = metric.reference(profile)
@@ -89,7 +90,20 @@ fun MetricMeter(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (showTitle) {
+        if (compact) {
+            Text(metric.label, color = Silver,
+                style = MaterialTheme.typography.labelMedium,
+                minLines = 2, maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(3.dp))
+            Text(number(value) + if (value != null && metric.unit.isNotBlank()) " " + metric.unit else "",
+                color = Color.White, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(assessment, color = stateColor, fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        } else if (showTitle) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(metric.label, modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium, color = Silver)
@@ -107,10 +121,10 @@ fun MetricMeter(
             }
         }
 
-        Spacer(Modifier.height(9.dp))
-        Canvas(Modifier.fillMaxWidth().height(24.dp)) {
+        Spacer(Modifier.height(if (compact) 3.dp else 9.dp))
+        Canvas(Modifier.fillMaxWidth().height(if (compact) 16.dp else 24.dp)) {
             val cy = size.height / 2f
-            val thickness = 9.dp.toPx()
+            val thickness = (if (compact) 5.dp else 9.dp).toPx()
             val corner = CornerRadius(thickness / 2f)
             drawRoundRect(color = Color(0xFF344254),
                 topLeft = Offset(0f, cy - thickness / 2f),
@@ -131,30 +145,46 @@ fun MetricMeter(
             }
             if (value != null && value.isFinite()) {
                 val x = scale.relative(value) * size.width
-                drawCircle(Color(0xFF0B0F1A), radius = 10.dp.toPx(),
+                drawCircle(Color(0xFF0B0F1A),
+                    radius = (if (compact) 6.dp else 10.dp).toPx(),
                     center = Offset(x, cy))
-                drawCircle(stateColor, radius = 7.dp.toPx(), center = Offset(x, cy))
-                drawCircle(Color.White, radius = 2.4.dp.toPx(), center = Offset(x, cy))
+                drawCircle(stateColor, radius = (if (compact) 4.dp else 7.dp).toPx(),
+                    center = Offset(x, cy))
+                drawCircle(Color.White, radius = (if (compact) 1.3.dp else 2.4.dp).toPx(),
+                    center = Offset(x, cy))
             }
         }
 
-        if (reference.applicable && reference.min != null && reference.max != null) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("低め", color = Amber, style = MaterialTheme.typography.labelSmall)
-                Text("適正目安", color = Green, style = MaterialTheme.typography.labelSmall)
-                Text("高め", color = Pink, style = MaterialTheme.typography.labelSmall)
-            }
+        if (compact) {
+            val shortReference =
+                if (reference.applicable && reference.min != null && reference.max != null) {
+                    "目安 " + number(reference.min) + "〜" + number(reference.max) +
+                        if (metric.unit.isNotBlank()) " " + metric.unit else ""
+                } else "適正値なし・履歴比較"
+            Spacer(Modifier.height(3.dp))
+            Text(shortReference, color = Silver,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("履歴内での相対位置", color = Silver,
-                    style = MaterialTheme.typography.labelSmall)
-                Text("適正判定なし", color = Silver,
-                    style = MaterialTheme.typography.labelSmall)
+            if (reference.applicable && reference.min != null && reference.max != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("低め", color = Amber, style = MaterialTheme.typography.labelSmall)
+                    Text("適正目安", color = Green, style = MaterialTheme.typography.labelSmall)
+                    Text("高め", color = Pink, style = MaterialTheme.typography.labelSmall)
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("履歴内での相対位置", color = Silver,
+                        style = MaterialTheme.typography.labelSmall)
+                    Text("適正判定なし", color = Silver,
+                        style = MaterialTheme.typography.labelSmall)
+                }
             }
+            Spacer(Modifier.height(5.dp))
+            Text("目安: " + reference.label, color = Silver,
+                style = MaterialTheme.typography.labelSmall)
         }
-        Spacer(Modifier.height(5.dp))
-        Text("目安: " + reference.label, color = Silver,
-            style = MaterialTheme.typography.labelSmall)
     }
 }
 

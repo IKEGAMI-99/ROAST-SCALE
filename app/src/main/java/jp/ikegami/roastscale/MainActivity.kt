@@ -243,13 +243,35 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Color(0xFF334052))
             Spacer(Modifier.height(10.dp))
-            MetricCatalog.all.drop(1).forEachIndexed { index, metric ->
-                if (index != 0) {
-                    Spacer(Modifier.height(18.dp))
-                    HorizontalDivider(color = Color(0xFF334052))
-                    Spacer(Modifier.height(15.dp))
+            // Two compact meters per row. Weight above remains prominent.
+            MetricCatalog.all.drop(1).chunked(2).forEachIndexed { rowIndex, pair ->
+                if (rowIndex != 0) Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    pair.forEach { metric ->
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF202B3D)
+                            )
+                        ) {
+                            Box(Modifier.fillMaxWidth().padding(12.dp)) {
+                                MetricMeter(
+                                    metric = metric,
+                                    current = recent,
+                                    history = state.measurements,
+                                    profile = state.profile,
+                                    compact = true
+                                )
+                            }
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
-                MetricMeter(metric, recent, state.measurements, state.profile)
             }
             Spacer(Modifier.height(14.dp))
             Text("※BMI・体重以外は機器や推定式で差があります。目安は診断や減量指示ではありません。",
