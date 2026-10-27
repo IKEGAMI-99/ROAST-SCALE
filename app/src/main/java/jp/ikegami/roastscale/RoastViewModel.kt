@@ -178,8 +178,11 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun reportLocationDisabled() {
+        _state.update { it.copy(message = "端末の位置情報をONにしてから、BLE測定を再開してください") }
+    }
     fun reportPermissionDenied() {
-        _state.update { it.copy(message = "近くのデバイス（Bluetooth）権限を許可してください") }
+        _state.update { it.copy(message = "Bluetoothおよび正確な位置情報を許可してください。権限を拒否した場合はアプリ情報→権限から再設定できます") }
     }
     fun clearMessage() { _state.update { it.copy(message = null) } }
     override fun onCleared() {

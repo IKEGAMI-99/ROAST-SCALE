@@ -118,3 +118,8 @@ body-composition metrics.
 Note that a new unsigned debug APK from GitHub Actions usually has a different Android
 debug signature; back up existing data and uninstall the earlier debug APK if Android
 rejects the new APK as an incompatible update.
+
+
+### Android 12–16: all BLE advertisements remain at zero
+
+On some Android BLE stacks a scan may start without callbacks when Location is switched off. Since this application does not use `neverForLocation` (which may filter scale advertisements), its scanner requests Nearby Devices (SCAN and CONNECT) and both coarse and precise Location. It does not request GPS coordinates or upload BLE data. Enable Location in Android quick settings and grant Precise Location to ROAST SCALE. The reception dashboard displays permission/location state and elapsed scan time. If no callback arrives after 12 seconds, it reports the stall instead of silently showing 'scanning'. This is a diagnosis aid, not a guarantee that a particular Xiaomi firmware will work.

@@ -1,6 +1,9 @@
 package jp.ikegami.roastscale
 
 import android.Manifest
+import android.content.Intent
+import android.location.LocationManager
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -55,9 +58,18 @@ private fun RoastApp(vm: RoastViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var page by remember { mutableIntStateOf(0) }
+    // Request both approximate + precise on Android 12+; requesting precise
+    // alone can be ignored. BLUETOOTH_CONNECT covers BluetoothAdapter.isEnabled.
     val required = remember {
-        if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_SCAN)
-        else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (Build.VERSION.SDK_INT >= 31) arrayOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) else arrayOf(
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
     }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -65,7 +77,18 @@ private fun RoastApp(vm: RoastViewModel) {
         if (required.all { granted[it] == true }) vm.startScan() else vm.reportPermissionDenied()
     }
     val requestScan: () -> Unit = {
-        if (required.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
+        // Android's BLE scanner may register successfully yet return zero results
+        // with the system-wide Location switch off (especially vendor stacks).
+        val locationManager = context.getSystemService(LocationManager::class.java)
+        val locationOn = if (Build.VERSION.SDK_INT >= 28) locationManager?.isLocationEnabled == true
+            else locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true ||
+                locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+        if (!locationOn) {
+            vm.reportLocationDisabled()
+            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        } else if (required.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }) {
             vm.startScan()
         } else {
             permissionLauncher.launch(required)
@@ -228,6 +251,28 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
 
         Panel {
             Text("🔎 BLE受信診断", color = Accent, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            val d = state.bleDiagnostics
+            Text("端末: " + Build.MANUFACTURER + " " + Build.MODEL +
+                "  / Android " + Build.VERSION.RELEASE,
+                color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("位置情報: " + if (d.locationEnabled) "ON" else "OFF",
+                color = if (d.locationEnabled) Accent else Color(0xFFFFA58A))
+            Text("近くのデバイス: " + if (d.scanPermission && d.connectPermission) "許可" else "未許可",
+                color = if (d.scanPermission && d.connectPermission) Accent else Color(0xFFFFA58A))
+            Text("正確な位置情報: " + if (d.fineLocationPermission) "許可" else "未許可",
+                color = if (d.fineLocationPermission) Accent else Color(0xFFFFA58A))
+            Text("経過時間: " + d.secondsSinceStart + "秒  /  状態: " + d.lastResult,
+                color = Muted, style = MaterialTheme.typography.bodySmall)
+            if (!d.locationEnabled) {
+                Text("システムの位置情報がOFFです。BLEスキャン結果が返らないことがあります。",
+                    color = Color(0xFFFFA58A), style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("端末の位置情報設定を開く")
+            }
             Spacer(Modifier.height(8.dp))
             Text("周辺BLE広告: " + state.bleDiagnostics.packets +
                 " 件  /  Xiaomi (181B): " + state.bleDiagnostics.scalePackets +
