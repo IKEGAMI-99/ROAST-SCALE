@@ -62,7 +62,7 @@ private fun RoastApp(vm: RoastViewModel) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
-        if (required.all { granted[it] == true }) vm.startScan()
+        if (required.all { granted[it] == true }) vm.startScan() else vm.reportPermissionDenied()
     }
     val requestScan: () -> Unit = {
         if (required.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
@@ -224,6 +224,37 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
             ) { Text(if (state.scanning) "測定を停止" else "BLE測定を開始") }
             Text("体重が安定したら自動保存。ペアリング不要です。",
                 color = Muted, style = MaterialTheme.typography.labelSmall)
+        }
+
+        Panel {
+            Text("🔎 BLE受信診断", color = Accent, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("周辺BLE広告: " + state.bleDiagnostics.packets +
+                " 件  /  Xiaomi (181B): " + state.bleDiagnostics.scalePackets +
+                " 件  /  解析成功: " + state.bleDiagnostics.validPackets + " 件",
+                color = Color.White, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            if (state.bleDiagnostics.scalePackets > 0) {
+                Text("受信機器: " + state.bleDiagnostics.lastDevice, color = Muted)
+                Text("判定: " + state.bleDiagnostics.lastResult, color = Accent)
+                Text("生データ (HEX):", color = Muted,
+                    style = MaterialTheme.typography.labelSmall)
+                Text(state.bleDiagnostics.lastFrame, color = Color.White,
+                    style = MaterialTheme.typography.bodySmall)
+            } else if (state.bleDiagnostics.packets > 0) {
+                Text("周辺のBLE信号は受信中ですが、体組成計の広告は未検出です。計測中に端末を近づけてください。",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("0件のままならBluetooth・近くのデバイス権限・端末の位置情報設定を確認してください。",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+            }
+            if (state.bleDiagnostics.nearbyDevices.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text("近くのBLE機器", color = Muted, style = MaterialTheme.typography.labelSmall)
+                state.bleDiagnostics.nearbyDevices.forEach { item ->
+                    Text("• " + item, color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
 
         Panel {

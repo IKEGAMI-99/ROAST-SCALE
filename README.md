@@ -75,3 +75,26 @@ No scale data, profile information or prompt is transmitted to a server. Only th
 - Test on XMTZC02HM hardware, confirm impedance broadcasts and deduplication.
 - Run E4B LiteRT-LM on the target POCO device and verify GPU/CPU fallback.
 - Configure fixed signing and publish first signed release.
+
+
+## BLE troubleshooting and diagnostics
+
+Open the **測定** tab and tap **BLE測定を開始**. Version after the first prototype shows
+three counters: nearby BLE advertisements, Xiaomi 0x181B packets, and valid measurements.
+There is also the last raw Xiaomi HEX payload, decode status, and recently seen BLE device names.
+
+- **0 nearby BLE packets**: check Android nearby devices permission, system Bluetooth switch,
+  and (on some phones) the location-services toggle. Keep the app foregrounded.
+- **Nearby BLE packets but 0 Xiaomi packets**: bring the scale within 1 m, step on it,
+  wait for a stabilized display, and temporarily close competing Xiaomi or Zepp Life apps.
+- **Xiaomi packets but 0 valid measurements**: share the raw HEX and the displayed
+  decode status to adjust the parser for the device firmware.
+- A final **0xA6** packet is now accepted: it is stabilized measurement data even
+  if the flag "person stepped off" is set.
+
+No user profile is needed to test reception. A profile is only used for the estimated
+body-composition metrics.
+
+Note that a new unsigned debug APK from GitHub Actions usually has a different Android
+debug signature; back up existing data and uninstall the earlier debug APK if Android
+rejects the new APK as an incompatible update.

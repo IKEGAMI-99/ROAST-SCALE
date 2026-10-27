@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import jp.ikegami.roastscale.ai.GemmaCoach
 import jp.ikegami.roastscale.ai.ModelDownload
+import jp.ikegami.roastscale.ble.BleDiagnostics
 import jp.ikegami.roastscale.ble.ScaleScanner
 import jp.ikegami.roastscale.data.Measurement
 import jp.ikegami.roastscale.data.MeasurementStore
@@ -26,6 +27,7 @@ data class RoastUiState(
     val roastLevel: Int = 3,
     val measurements: List<Measurement> = emptyList(),
     val scanning: Boolean = false,
+    val bleDiagnostics: BleDiagnostics = BleDiagnostics(),
     val status: String = "測定待機",
     val aiStatus: String = "",
     val modelReady: Boolean = false,
@@ -43,9 +45,15 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
     private val db = MeasurementStore(app)
     private val settings = UserSettings(app)
     private val coach = GemmaCoach(app)
-    private val scanner = ScaleScanner(app, ::onReading) { status ->
-        _state.update { it.copy(status = status) }
-    }
+    private val scanner = ScaleScanner(
+        app,
+        ::onReading,
+        { status ->
+            _state.update { it.copy(status = status, scanning = !status.startsWith("スキャンエラー") &&
+                !status.startsWith("BluetoothがOFF") && !status.startsWith("測定停止")) }
+        },
+        { diagnostic -> _state.update { it.copy(bleDiagnostics = diagnostic) } }
+    )
     private val _state = MutableStateFlow(
         RoastUiState(profile = settings.profile(), roastLevel = settings.roast(),
             modelReady = ModelDownload.isReady(app))
@@ -65,10 +73,7 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startScan() {
-        if (!_state.value.profile.valid) {
-            _state.update { it.copy(message = "設定から身長・年齢・計算用の性別を登録してください") }
-            return
-        }
+        // BLE reception should work even before a body-composition profile is configured.
         val started = scanner.start()
         _state.update { it.copy(scanning = started) }
     }
@@ -173,6 +178,9 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun reportPermissionDenied() {
+        _state.update { it.copy(message = "近くのデバイス（Bluetooth）権限を許可してください") }
+    }
     fun clearMessage() { _state.update { it.copy(message = null) } }
     override fun onCleared() {
         scanner.stop()
