@@ -33,12 +33,13 @@ class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scal
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
-    @Synchronized fun readings(limit: Int = 180): List<Measurement> {
+    // Null limit includes the entire history for the '全件' graph option.
+    @Synchronized fun readings(limit: Int? = null): List<Measurement> {
         val out = mutableListOf<Measurement>()
-        readableDatabase.rawQuery(
-            "SELECT * FROM measurements ORDER BY measured_at DESC LIMIT ?",
-            arrayOf(limit.toString())
-        ).use { c ->
+        val sql = "SELECT * FROM measurements ORDER BY measured_at DESC" +
+            if (limit == null) "" else " LIMIT ?"
+        val arguments = if (limit == null) null else arrayOf(limit.toString())
+        readableDatabase.rawQuery(sql, arguments).use { c ->
             while (c.moveToNext()) {
                 fun nullableDouble(name: String): Double? {
                     val i = c.getColumnIndexOrThrow(name)
@@ -97,6 +98,13 @@ class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scal
         val entry = values(reading, composition).apply { put("measured_at", now) }
         val id = writableDatabase.insertOrThrow("measurements", null, entry)
         return Measurement(id, now, reading.weightKg, reading.impedanceOhm, composition, "")
+    }
+
+    /** Deletes one record and its stored AI comment, without touching other rows. */
+    @Synchronized fun deleteMeasurement(id: Long): Boolean {
+        return writableDatabase.delete(
+            "measurements", "id=?", arrayOf(id.toString())
+        ) == 1
     }
 
     @Synchronized fun saveComment(id: Long, comment: String) {

@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +35,9 @@ import jp.ikegami.roastscale.data.Measurement
 import jp.ikegami.roastscale.data.Profile
 import jp.ikegami.roastscale.data.ReferenceGuide
 import jp.ikegami.roastscale.data.ReferenceBand
+import jp.ikegami.roastscale.data.MetricCatalog
+import jp.ikegami.roastscale.ui.MetricMeter
+import jp.ikegami.roastscale.ui.HistoryCharts
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -139,7 +144,7 @@ private fun RoastApp(vm: RoastViewModel) {
                 }
                 when (page) {
                     0 -> Dashboard(state, requestScan, vm::stopScan)
-                    1 -> HistoryScreen(state.measurements)
+                    1 -> HistoryScreen(state.measurements, state.profile, vm::deleteMeasurement)
                     else -> SettingsScreen(state, vm)
                 }
             }
@@ -171,30 +176,6 @@ private fun format(value: Double?, suffix: String = ""): String =
 
 private fun date(millis: Long): String =
     SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(Date(millis))
-
-@Composable
-private fun Metric(
-    label: String,
-    value: String,
-    reference: ReferenceBand,
-    measured: Double?,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier.padding(6.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = Muted)
-        Spacer(Modifier.height(6.dp))
-        Text(value, style = MaterialTheme.typography.titleLarge, color = Color.White,
-            fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(5.dp))
-        Text("目安: " + reference.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = when (reference.inRange(measured)) {
-                true -> Accent
-                false -> Purple
-                null -> Muted
-            })
-    }
-}
 
 @Composable
 private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Unit) {
@@ -257,46 +238,20 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
                     Text("前回比", style = MaterialTheme.typography.labelSmall, color = Muted)
                 }
             }
-            Text("目安: " + ReferenceGuide.weight(state.profile).label,
-                color = if (ReferenceGuide.weight(state.profile).inRange(recent?.weightKg) == true) Accent else Muted,
-                style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(18.dp))
-            TrendBars(state.measurements)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
+            MetricMeter(MetricCatalog.all.first(), recent, state.measurements, state.profile, showTitle = false)
+            Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Color(0xFF334052))
             Spacer(Modifier.height(10.dp))
-            Row {
-                Metric("BMI", format(recent?.composition?.bmi),
-                    ReferenceGuide.bmi(), recent?.composition?.bmi, Modifier.weight(1f))
-                Metric("体脂肪率（推定）", format(recent?.composition?.fatPercent, " %"),
-                    ReferenceGuide.fat(state.profile), recent?.composition?.fatPercent, Modifier.weight(1f))
+            MetricCatalog.all.drop(1).forEachIndexed { index, metric ->
+                if (index != 0) {
+                    Spacer(Modifier.height(18.dp))
+                    HorizontalDivider(color = Color(0xFF334052))
+                    Spacer(Modifier.height(15.dp))
+                }
+                MetricMeter(metric, recent, state.measurements, state.profile)
             }
-            Spacer(Modifier.height(8.dp))
-            Row {
-                Metric("筋肉量（推定）", format(recent?.composition?.muscleKg, " kg"),
-                    ReferenceGuide.muscle(), recent?.composition?.muscleKg, Modifier.weight(1f))
-                Metric("体水分率（推定）", format(recent?.composition?.waterPercent, " %"),
-                    ReferenceGuide.water(state.profile), recent?.composition?.waterPercent, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(8.dp))
-            Row {
-                Metric("骨量（推定）", format(recent?.composition?.boneKg, " kg"),
-                    ReferenceGuide.bone(), recent?.composition?.boneKg, Modifier.weight(1f))
-                Metric("基礎代謝（推定）", format(recent?.composition?.bmrKcal, " kcal"),
-                    ReferenceGuide.bmr(), recent?.composition?.bmrKcal, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(8.dp))
-            Row {
-                Metric("タンパク質率（推定）", format(recent?.composition?.proteinPercent, " %"),
-                    ReferenceGuide.protein(), recent?.composition?.proteinPercent, Modifier.weight(1f))
-                Metric("内臓脂肪指数（推定）", format(recent?.composition?.visceralIndex),
-                    ReferenceGuide.visceral(), recent?.composition?.visceralIndex, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(8.dp))
-            Metric("インピーダンス（実測）",
-                if (recent?.impedanceOhm == null) "—" else recent.impedanceOhm.toString() + " Ω",
-                ReferenceGuide.impedance(), recent?.impedanceOhm?.toDouble())
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(14.dp))
             Text("※BMI・体重以外は機器や推定式で差があります。目安は診断や減量指示ではありません。",
                 color = Muted, style = MaterialTheme.typography.labelSmall)
         }
@@ -322,41 +277,51 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
 }
 
 @Composable
-private fun TrendBars(data: List<Measurement>) {
-    val values = data.take(14).reversed().map { it.weightKg }
-    if (values.isEmpty()) {
-        Text("グラフは測定後に表示されます", color = Muted)
-        return
+private fun HistoryScreen(
+    history: List<Measurement>,
+    profile: Profile,
+    onDelete: (Long) -> Unit
+) {
+    var pendingDelete by remember { mutableStateOf<Measurement?>(null) }
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("この記録を削除しますか？") },
+            text = { Text(date(target.measuredAt) + " の " +
+                format(target.weightKg, " kg") +
+                " を削除します。測定値とAIコメントが削除され、すべてのグラフからも消えます。元に戻せません。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(target.id)
+                    pendingDelete = null
+                }) { Text("削除する", color = Color(0xFFFF9C9C)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("キャンセル") }
+            }
+        )
     }
-    val low = values.minOrNull() ?: 0.0
-    val high = values.maxOrNull() ?: 1.0
-    Text("WEIGHT TREND · LAST " + values.size, color = Muted,
-        style = MaterialTheme.typography.labelSmall)
-    Spacer(Modifier.height(10.dp))
-    Row(Modifier.fillMaxWidth().height(94.dp), verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        values.forEachIndexed { i, value ->
-            val range = (high - low).coerceAtLeast(0.2)
-            val fraction = ((value - low) / range).toFloat().coerceIn(0f, 1f)
-            Box(Modifier.weight(1f).height((20f + fraction * 68f).dp)
-                .background(if (i == values.lastIndex) Accent else Color(0xFF526984),
-                    RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp)))
-        }
-    }
-}
-
-@Composable
-private fun HistoryScreen(history: List<Measurement>) {
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 6.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        contentPadding = PaddingValues(bottom = 25.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        TitleBlock("測定履歴", "測定データとGemmaの講評を端末内に保存")
-        if (history.isEmpty()) {
-            Panel { Text("まだ測定履歴がありません", color = Muted) }
+        item {
+            TitleBlock("測定履歴", "各項目の折れ線グラフと記録の管理")
         }
-        history.forEach { row ->
+        item {
+            HistoryCharts(history, profile)
+        }
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text("測定記録 · " + history.size + "件",
+                color = Color.White, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge)
+        }
+        if (history.isEmpty()) {
+            item { Panel { Text("まだ測定履歴がありません", color = Muted) } }
+        }
+        items(history, key = { it.id }) { row ->
             Panel {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -364,10 +329,12 @@ private fun HistoryScreen(history: List<Measurement>) {
                             style = MaterialTheme.typography.labelSmall)
                         Text(format(row.weightKg, " kg"), color = Color.White,
                             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text("体脂肪 " + format(row.composition?.fatPercent, " %") +
+                            "  ·  BMI " + format(row.composition?.bmi), color = Muted,
+                            style = MaterialTheme.typography.bodySmall)
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("体脂肪 " + format(row.composition?.fatPercent, " %"), color = Accent)
-                        Text("BMI " + format(row.composition?.bmi), color = Muted)
+                    TextButton(onClick = { pendingDelete = row }) {
+                        Text("削除", color = Color(0xFFFF9C9C))
                     }
                 }
                 if (row.comment.isNotBlank()) {
@@ -379,7 +346,6 @@ private fun HistoryScreen(history: List<Measurement>) {
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
     }
 }
 

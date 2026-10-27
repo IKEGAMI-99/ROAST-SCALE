@@ -106,6 +106,17 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun deleteMeasurement(id: Long) {
+        viewModelScope.launch {
+            val deleted = withContext(Dispatchers.IO) { db.deleteMeasurement(id) }
+            val fresh = withContext(Dispatchers.IO) { db.readings() }
+            _state.update {
+                it.copy(measurements = fresh,
+                    message = if (deleted) "測定記録を削除しました" else "記録が見つかりませんでした")
+            }
+        }
+    }
+
     fun saveProfile(profile: Profile) {
         if (!profile.valid) {
             _state.update { it.copy(message = "身長120〜210cm、年齢18〜99歳を入力してください") }
