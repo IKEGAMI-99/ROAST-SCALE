@@ -3,8 +3,6 @@ package jp.ikegami.roastscale
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import jp.ikegami.roastscale.ai.GemmaCoach
-import jp.ikegami.roastscale.ai.ModelDownload
 import jp.ikegami.roastscale.ble.BleDiagnostics
 import jp.ikegami.roastscale.ble.ScaleScanner
 import jp.ikegami.roastscale.data.Measurement
@@ -12,6 +10,8 @@ import jp.ikegami.roastscale.data.MeasurementStore
 import jp.ikegami.roastscale.data.Profile
 import jp.ikegami.roastscale.data.ScaleReading
 import jp.ikegami.roastscale.data.UserSettings
+import jp.ikegami.roastscale.data.WaistEntry
+import jp.ikegami.roastscale.share.HealthExport
 import jp.ikegami.roastscale.update.AvailableRelease
 import jp.ikegami.roastscale.update.ReleaseUpdater
 import kotlinx.coroutines.Dispatchers
@@ -24,15 +24,11 @@ import java.io.File
 
 data class RoastUiState(
     val profile: Profile = Profile(),
-    val roastLevel: Int = 3,
     val measurements: List<Measurement> = emptyList(),
+    val waists: List<WaistEntry> = emptyList(),
     val scanning: Boolean = false,
     val bleDiagnostics: BleDiagnostics = BleDiagnostics(),
     val status: String = "測定待機",
-    val aiStatus: String = "",
-    val modelReady: Boolean = false,
-    val modelDownloading: Boolean = false,
-    val modelProgress: Int = 0,
     val updateChecking: Boolean = false,
     val release: AvailableRelease? = null,
     val updateDownloading: Boolean = false,
@@ -44,21 +40,21 @@ data class RoastUiState(
 class RoastViewModel(app: Application) : AndroidViewModel(app) {
     private val db = MeasurementStore(app)
     private val settings = UserSettings(app)
-    private val coach = GemmaCoach(app)
+    private val _state = MutableStateFlow(RoastUiState(profile = settings.profile()))
+    val state = _state.asStateFlow()
+
     private val scanner = ScaleScanner(
         app,
         ::onReading,
         { status ->
-            _state.update { it.copy(status = status, scanning = !status.startsWith("スキャンエラー") &&
-                !status.startsWith("BluetoothがOFF") && !status.startsWith("測定停止")) }
+            _state.update { it.copy(status = status, scanning =
+                !status.startsWith("スキャンエラー") &&
+                !status.startsWith("BluetoothがOFF") &&
+                !status.startsWith("測定停止") &&
+                !status.startsWith("BLE受信ゼロ")) }
         },
         { diagnostic -> _state.update { it.copy(bleDiagnostics = diagnostic) } }
     )
-    private val _state = MutableStateFlow(
-        RoastUiState(profile = settings.profile(), roastLevel = settings.roast(),
-            modelReady = ModelDownload.isReady(app))
-    )
-    val state = _state.asStateFlow()
 
     init {
         scanner.refreshEnvironment()
@@ -68,17 +64,15 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         viewModelScope.launch {
-            val list = withContext(Dispatchers.IO) { db.readings() }
-            _state.update { it.copy(measurements = list) }
+            val data = withContext(Dispatchers.IO) { db.readings() to db.waists() }
+            _state.update { it.copy(measurements = data.first, waists = data.second) }
         }
     }
 
     fun startScan() {
-        // BLE reception should work even before a body-composition profile is configured.
         val started = scanner.start()
         _state.update { it.copy(scanning = started) }
     }
-
     fun stopScan() {
         scanner.stop()
         _state.update { it.copy(scanning = false) }
@@ -86,22 +80,10 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun onReading(reading: ScaleReading) {
         viewModelScope.launch {
-            val currentProfile = _state.value.profile
-            val record = withContext(Dispatchers.IO) { db.record(reading, currentProfile) } ?: return@launch
-            val history = withContext(Dispatchers.IO) { db.readings() }
-            _state.update { it.copy(measurements = history, status = "測定を保存しました") }
-            if (!ModelDownload.isReady(getApplication())) {
-                _state.update { it.copy(aiStatus = "AIモデル未設定。設定画面でE4Bを取得してください") }
-                return@launch
-            }
-            _state.update { it.copy(aiStatus = "Gemma 4がデータを査定中…") }
-            try {
-                val reply = coach.comment(record, history, _state.value.roastLevel)
-                withContext(Dispatchers.IO) { db.saveComment(record.id, reply) }
-                val refreshed = withContext(Dispatchers.IO) { db.readings() }
-                _state.update { it.copy(aiStatus = "", measurements = refreshed) }
-            } catch (e: Exception) {
-                _state.update { it.copy(aiStatus = "AI生成失敗: " + e.message) }
+            val record = withContext(Dispatchers.IO) { db.record(reading, _state.value.profile) }
+            if (record != null) {
+                val history = withContext(Dispatchers.IO) { db.readings() }
+                _state.update { it.copy(measurements = history, status = "測定を保存しました") }
             }
         }
     }
@@ -110,10 +92,30 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val deleted = withContext(Dispatchers.IO) { db.deleteMeasurement(id) }
             val fresh = withContext(Dispatchers.IO) { db.readings() }
-            _state.update {
-                it.copy(measurements = fresh,
-                    message = if (deleted) "測定記録を削除しました" else "記録が見つかりませんでした")
-            }
+            _state.update { it.copy(measurements = fresh,
+                message = if (deleted) "測定記録を削除しました" else "記録が見つかりませんでした") }
+        }
+    }
+
+    fun addWaist(value: Double?) {
+        if (value == null || value !in 30.0..200.0) {
+            _state.update { it.copy(message = "腹囲は30〜200cmの数値を入力してください") }
+            return
+        }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { db.addWaist(value) }
+            val updated = withContext(Dispatchers.IO) { db.waists() }
+            _state.update { it.copy(waists = updated,
+                message = if (ok) "腹囲を記録しました" else "腹囲の保存に失敗しました") }
+        }
+    }
+
+    fun deleteWaist(id: Long) {
+        viewModelScope.launch {
+            val deleted = withContext(Dispatchers.IO) { db.deleteWaist(id) }
+            val updated = withContext(Dispatchers.IO) { db.waists() }
+            _state.update { it.copy(waists = updated,
+                message = if (deleted) "腹囲記録を削除しました" else "記録が見つかりませんでした") }
         }
     }
 
@@ -123,27 +125,29 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         settings.saveProfile(profile)
-        _state.update { it.copy(profile = profile, message = "プロフィールを保存しました。過去の推定値は再計算されません") }
+        _state.update { it.copy(profile = profile, message = "プロフィールを保存しました") }
     }
 
-    fun setRoast(level: Int) {
-        settings.saveRoast(level)
-        _state.update { it.copy(roastLevel = level) }
-    }
-
-    fun downloadModel() {
-        if (_state.value.modelDownloading || _state.value.modelReady) return
+    fun shareChatGPT() {
         viewModelScope.launch {
-            _state.update { it.copy(modelDownloading = true, modelProgress = 0, message = null) }
             try {
-                ModelDownload.download(getApplication()) { progress ->
-                    _state.update { it.copy(modelProgress = progress) }
-                }
-                _state.update { it.copy(modelReady = true, message = "Gemma 4 E4Bを準備しました") }
+                // Read latest complete database state, not a truncated screen snapshot.
+                val (measurements, waists) = withContext(Dispatchers.IO) { db.readings() to db.waists() }
+                HealthExport.share(getApplication(), measurements, waists, _state.value.profile, true)
+                _state.update { it.copy(message = "相談文と全履歴CSVをコピーしました。ChatGPTで貼り付けできます") }
             } catch (e: Exception) {
-                _state.update { it.copy(message = "モデル取得失敗: " + e.message) }
-            } finally {
-                _state.update { it.copy(modelDownloading = false) }
+                _state.update { it.copy(message = "共有に失敗: " + (e.message ?: "不明なエラー")) }
+            }
+        }
+    }
+
+    fun shareCsv() {
+        viewModelScope.launch {
+            try {
+                val (measurements, waists) = withContext(Dispatchers.IO) { db.readings() to db.waists() }
+                HealthExport.share(getApplication(), measurements, waists, _state.value.profile, false)
+            } catch (e: Exception) {
+                _state.update { it.copy(message = "CSV共有に失敗: " + (e.message ?: "不明なエラー")) }
             }
         }
     }
@@ -155,11 +159,8 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val available = ReleaseUpdater.check()
                 _state.update { it.copy(release = available) }
-            } catch (_: Exception) {
-                // Offline measurement must work without GitHub connectivity.
-            } finally {
-                _state.update { it.copy(updateChecking = false) }
-            }
+            } catch (_: Exception) { }
+            finally { _state.update { it.copy(updateChecking = false) } }
         }
     }
 
@@ -169,10 +170,11 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.update { it.copy(updateDownloading = true, updateProgress = 0) }
             try {
-                val file = ReleaseUpdater.download(getApplication(), release) { progress ->
-                    _state.update { it.copy(updateProgress = progress) }
+                val file = ReleaseUpdater.download(getApplication(), release) {
+                    progress -> _state.update { it.copy(updateProgress = progress) }
                 }
-                _state.update { it.copy(apkPath = file.absolutePath, message = "APKの検証が完了しました") }
+                _state.update { it.copy(apkPath = file.absolutePath,
+                    message = "更新APKを検証しました") }
             } catch (e: Exception) {
                 _state.update { it.copy(message = "更新失敗: " + e.message) }
             } finally {
@@ -183,19 +185,12 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
 
     fun installUpdate() {
         val file = _state.value.apkPath?.let(::File) ?: return
-        try {
-            ReleaseUpdater.install(getApplication(), file)
-        } catch (e: Exception) {
-            _state.update { it.copy(message = "インストーラーの起動に失敗: " + e.message) }
-        }
+        try { ReleaseUpdater.install(getApplication(), file) }
+        catch (e: Exception) { _state.update { it.copy(message = "インストーラー失敗: " + e.message) } }
     }
 
-    fun reportLocationDisabled() {
-        _state.update { it.copy(message = "端末の位置情報をONにしてから、BLE測定を再開してください") }
-    }
-    fun reportPermissionDenied() {
-        _state.update { it.copy(message = "Bluetoothおよび正確な位置情報を許可してください。権限を拒否した場合はアプリ情報→権限から再設定できます") }
-    }
+    fun reportLocationDisabled() { _state.update { it.copy(message = "端末の位置情報をONにしてください") } }
+    fun reportPermissionDenied() { _state.update { it.copy(message = "Bluetoothと正確な位置情報を許可してください") } }
     fun clearMessage() { _state.update { it.copy(message = null) } }
     override fun onCleared() {
         scanner.stop()
