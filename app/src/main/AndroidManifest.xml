@@ -18,8 +18,6 @@
         android:usesCleartextTraffic="false"
         android:allowBackup="false"
         android:supportsRtl="true">
-        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
-        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="jp.ikegami.roastscale.fileprovider"

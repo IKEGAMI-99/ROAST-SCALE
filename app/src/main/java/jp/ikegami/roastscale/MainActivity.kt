@@ -36,6 +36,9 @@ import jp.ikegami.roastscale.data.Profile
 import jp.ikegami.roastscale.data.ReferenceGuide
 import jp.ikegami.roastscale.data.ReferenceBand
 import jp.ikegami.roastscale.data.MetricCatalog
+import jp.ikegami.roastscale.data.HealthTrends
+import jp.ikegami.roastscale.data.WaistEntry
+import jp.ikegami.roastscale.ui.HealthExtraCharts
 import jp.ikegami.roastscale.ui.MetricMeter
 import jp.ikegami.roastscale.ui.HistoryCharts
 import java.text.SimpleDateFormat
@@ -143,8 +146,8 @@ private fun RoastApp(vm: RoastViewModel) {
                     }
                 }
                 when (page) {
-                    0 -> Dashboard(state, requestScan, vm::stopScan)
-                    1 -> HistoryScreen(state.measurements, state.profile, vm::deleteMeasurement)
+                    0 -> Dashboard(state, requestScan, vm::stopScan, vm)
+                    1 -> HistoryScreen(state.measurements, state.waists, state.profile, vm::deleteMeasurement, vm::deleteWaist)
                     else -> SettingsScreen(state, vm)
                 }
             }
@@ -178,7 +181,7 @@ private fun date(millis: Long): String =
     SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(Date(millis))
 
 @Composable
-private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Unit) {
+private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Unit, vm: RoastViewModel) {
     val context = LocalContext.current
     val recent = state.measurements.firstOrNull()
     val previous = state.measurements.getOrNull(1)
@@ -279,19 +282,64 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
         }
 
         Panel {
-            Text("💀  GEMMA 4 / ROAST REPORT", color = Purple, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            Text(
-                when {
-                    state.aiStatus.isNotBlank() -> state.aiStatus
-                    recent == null -> "最初の測定を待っています。数字からは逃げられません。"
-                    recent.comment.isBlank() -> "測定データは記録済み。AIモデルを準備すると毒舌講評が使えます。"
-                    else -> recent.comment
-                },
-                color = Color.White, style = MaterialTheme.typography.bodyLarge
-            )
+            Text("腹囲・直近7日間の平均", color = Accent, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
-            Text("毒舌レベル " + state.roastLevel + " / 4  ·  ローカル推論",
+            val mean = HealthTrends.weight7DayAverage(state.measurements)
+            val latestWaist = state.waists.firstOrNull()
+            val ratio = latestWaist?.let { HealthTrends.waistToHeight(it.waistCm, state.profile.heightCm) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("7日平均体重", color = Muted, style = MaterialTheme.typography.labelMedium)
+                    Text(format(mean, " kg"), color = Color.White,
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("直近7暦日 / 1日1件", color = Muted,
+                        style = MaterialTheme.typography.labelSmall)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("腹囲（手入力）", color = Muted, style = MaterialTheme.typography.labelMedium)
+                    Text(format(latestWaist?.waistCm, " cm"), color = Color.White,
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("腹囲身長比 " + format(ratio), color = when {
+                        ratio == null -> Muted
+                        ratio < 0.5 -> Accent
+                        else -> Purple
+                    }, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("腹囲身長比は0.5未満が一般的な成人の目安です。",
+                color = Muted, style = MaterialTheme.typography.labelSmall)
+            var waistInput by remember { mutableStateOf("") }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = waistInput,
+                    onValueChange = { raw ->
+                        waistInput = raw.filter { it.isDigit() || it == '.' }.take(6)
+                    },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("腹囲 cm") },
+                    singleLine = true
+                )
+                Button(onClick = {
+                    vm.addWaist(waistInput.toDoubleOrNull())
+                    if ((waistInput.toDoubleOrNull() ?: 0.0) in 30.0..200.0) waistInput = ""
+                }) { Text("記録") }
+            }
+        }
+
+        Panel {
+            Text("ChatGPTにダイエット相談", color = Accent, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("すべての測定履歴と腹囲をCSVにまとめ、相談用プロンプトと一緒に共有します。",
+                color = Muted, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = vm::shareChatGPT, modifier = Modifier.fillMaxWidth()) {
+                Text("ChatGPTに共有（文章とCSV）")
+            }
+            OutlinedButton(onClick = vm::shareCsv, modifier = Modifier.fillMaxWidth()) {
+                Text("CSVファイルだけ共有")
+            }
+            Text("共有はボタン操作時のみ。相談文＋CSVをクリップボードにもコピーします。送信前に内容をご確認ください。",
                 color = Muted, style = MaterialTheme.typography.labelSmall)
         }
         Spacer(Modifier.height(12.dp))
@@ -301,17 +349,20 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
 @Composable
 private fun HistoryScreen(
     history: List<Measurement>,
+    waists: List<WaistEntry>,
     profile: Profile,
-    onDelete: (Long) -> Unit
+    onDelete: (Long) -> Unit,
+    onDeleteWaist: (Long) -> Unit
 ) {
     var pendingDelete by remember { mutableStateOf<Measurement?>(null) }
+    var pendingWaistDelete by remember { mutableStateOf<WaistEntry?>(null) }
     pendingDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text("この記録を削除しますか？") },
             text = { Text(date(target.measuredAt) + " の " +
                 format(target.weightKg, " kg") +
-                " を削除します。測定値とAIコメントが削除され、すべてのグラフからも消えます。元に戻せません。") },
+                " を削除します。測定値がグラフからも消えます。元には戻せません。") },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete(target.id)
@@ -321,6 +372,20 @@ private fun HistoryScreen(
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("キャンセル") }
             }
+        )
+    }
+    pendingWaistDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingWaistDelete = null },
+            title = { Text("腹囲記録を削除しますか？") },
+            text = { Text(date(target.measuredAt) + " / " + format(target.waistCm," cm") +
+                " の記録を削除します。元には戻せません。") },
+            confirmButton = {
+                TextButton(onClick = { onDeleteWaist(target.id); pendingWaistDelete = null }) {
+                    Text("削除する", color = Color(0xFFFF9C9C))
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingWaistDelete = null }) { Text("キャンセル") } }
         )
     }
     LazyColumn(
@@ -333,6 +398,8 @@ private fun HistoryScreen(
         }
         item {
             HistoryCharts(history, profile)
+            Spacer(Modifier.height(12.dp))
+            HealthExtraCharts(history, waists, profile)
         }
         item {
             Spacer(Modifier.height(8.dp))
@@ -342,6 +409,26 @@ private fun HistoryScreen(
         }
         if (history.isEmpty()) {
             item { Panel { Text("まだ測定履歴がありません", color = Muted) } }
+        }
+        item {
+            Text("腹囲記録 · " + waists.size + "件", color = Color.White,
+                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+        }
+        items(waists, key = { "waist-" + it.id }) { w ->
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(date(w.measuredAt), color = Muted, style = MaterialTheme.typography.labelSmall)
+                        Text(format(w.waistCm," cm"), color = Color.White,
+                            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("腹囲身長比: " + format(HealthTrends.waistToHeight(w.waistCm, profile.heightCm)),
+                            color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { pendingWaistDelete = w }) {
+                        Text("削除", color = Color(0xFFFF9C9C))
+                    }
+                }
+            }
         }
         items(history, key = { it.id }) { row ->
             Panel {
@@ -359,13 +446,7 @@ private fun HistoryScreen(
                         Text("削除", color = Color(0xFFFF9C9C))
                     }
                 }
-                if (row.comment.isNotBlank()) {
-                    Spacer(Modifier.height(10.dp))
-                    HorizontalDivider(color = Color(0xFF354257))
-                    Spacer(Modifier.height(10.dp))
-                    Text("💀 " + row.comment, color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium)
-                }
+
             }
         }
     }
@@ -385,7 +466,7 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
             .padding(horizontal = 18.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(15.dp)
     ) {
-        TitleBlock("設定", "個人データは端末から出さない")
+        TitleBlock("設定", "データ共有は操作した時のみ")
         Panel {
             Text("測定プロフィール", color = Accent, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
@@ -415,37 +496,6 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
                     vm.saveProfile(Profile(height.toIntOrNull() ?: 0, age.toIntOrNull() ?: 0, sex))
                 }
             ) { Text("プロフィールを保存") }
-        }
-
-        Panel {
-            Text("毒舌レベル", color = Purple, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text(listOf("","やさしめ","辛口","毒舌","地獄")[state.roastLevel], color = Color.White)
-            Slider(value = state.roastLevel.toFloat(), onValueChange = { vm.setRoast(it.roundToInt()) },
-                valueRange = 1f..4f, steps = 2)
-            Text("数値には厳しく、人格や体型への侮辱はしない設定です。",
-                color = Muted, style = MaterialTheme.typography.bodySmall)
-        }
-
-        Panel {
-            Text("Gemma 4 E4B / LiteRT-LM", color = Accent, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text(if (state.modelReady) "モデル準備完了（オフライン推論）"
-                else "初回のみ約3.66GBをダウンロード", color = Muted)
-            if (state.modelDownloading) {
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(progress = { state.modelProgress / 100f },
-                    modifier = Modifier.fillMaxWidth())
-                Text(state.modelProgress.toString() + " %", color = Muted)
-            }
-            Spacer(Modifier.height(12.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !state.modelReady && !state.modelDownloading,
-                onClick = vm::downloadModel
-            ) { Text(if (state.modelReady) "モデル取得済み" else "E4Bモデルをダウンロード") }
-            Text("取得元: Hugging Face / LiteRT Community",
-                color = Muted, style = MaterialTheme.typography.labelSmall)
         }
 
         Panel {
