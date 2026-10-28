@@ -58,6 +58,12 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         scanner.refreshEnvironment()
+        // Previous versions could download a >3 GB Gemma file into app-private
+        // storage. The model is no longer used; reclaim storage, not measurements.
+        viewModelScope.launch(Dispatchers.IO) {
+            listOf("gemma-4-E4B-it.litertlm", "gemma-4-E4B-it.litertlm.part")
+                .forEach { name -> File(getApplication<Application>().filesDir, name).delete() }
+        }
         refresh()
         checkUpdate()
     }
