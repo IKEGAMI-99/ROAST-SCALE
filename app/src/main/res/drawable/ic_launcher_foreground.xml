@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A: lime body-composition scale and analog gauge, within adaptive safe area -->
+    <path android:fillColor="#B8FF6A"
+        android:pathData="M34,21 L74,21 C82,21 87,26 87,34 L87,75 C87,82 82,87 75,87 L33,87 C26,87 21,82 21,75 L21,34 C21,26 26,21 34,21 Z"/>
+    <path android:fillColor="#142131"
+        android:pathData="M37,31 L71,31 C75,31 79,35 79,39 L79,67 C79,72 75,76 71,76 L37,76 C32,76 29,72 29,67 L29,39 C29,35 32,31 37,31 Z"/>
+    <path android:fillColor="#324357"
+        android:pathData="M31,76 L46,76 L46,83 L31,83 Q28,83 28,80 Q28,76 31,76 Z"/>
+    <path android:fillColor="#324357"
+        android:pathData="M62,76 L77,76 Q80,76 80,80 Q80,83 77,83 L62,83 Z"/>
+    <!-- Arc indicates a measurement meter -->
+    <path android:pathData="M38,55 C39,45 46,40 54,40 C64,40 70,47 70,55"
+        android:strokeColor="#B8FF6A"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"/>
+    <path android:pathData="M54,55 L66,44"
+        android:strokeColor="#F4F7FF"
+        android:strokeWidth="3.8"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"/>
+    <path android:fillColor="#F4F7FF"
+        android:pathData="M54,50 A5,5 0,1 1,54 60 A5,5 0,1 1,54 50 Z"/>
+    <path android:pathData="M40,66 L68,66"
+        android:strokeColor="#B8FF6A"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"/>
+</vector>
