@@ -2,7 +2,6 @@ package jp.ikegami.roastscale.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateInt
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -69,9 +68,9 @@ fun SlotWeightDisplay(weightKg: Double?, modifier: Modifier = Modifier) {
     val digitCount = digitString?.length ?: 3
     var revealed by remember { mutableIntStateOf(0) }
     val transition = rememberInfiniteTransition(label = "slotRoll")
-    val rollingStep by transition.animateInt(
-        initialValue = 0,
-        targetValue = 19,
+    val rollingStep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 19f,
         animationSpec = infiniteRepeatable(tween(1550, easing = LinearEasing)),
         label = "slotFrames"
     )
@@ -96,7 +95,7 @@ fun SlotWeightDisplay(weightKg: Double?, modifier: Modifier = Modifier) {
             }
             val rightIndex = digitCount - 1 - index
             val locked = digitString != null && revealed > rightIndex
-            val digit = if (locked) digitString[index] else ('0' + (rollingStep + index * 4) % 10)
+            val digit = if (locked) digitString[index] else ('0' + (rollingStep.toInt() + index * 4) % 10)
             AnimatedContent(
                 targetState = digit,
                 transitionSpec = {
