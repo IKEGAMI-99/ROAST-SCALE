@@ -4,6 +4,13 @@ package jp.ikegami.roastscale.data
 data class ScaleReading(val weightKg: Double, val impedanceOhm: Int?, val stabilized: Boolean)
 
 object ScalePacket {
+    /** Weight shown during an in-progress BLE measurement, before stabilization. */
+    fun previewWeight(data: ByteArray): Double? {
+        if (data.size != 13 || (data[0].toInt() and 0xff) != 0x02) return null
+        val raw = (data[11].toInt() and 0xff) or ((data[12].toInt() and 0xff) shl 8)
+        return (raw / 200.0).takeIf { it in 10.0..200.0 }
+    }
+
     fun decode(data: ByteArray): ScaleReading? {
         if (data.size != 13) return null
         val unit = data[0].toInt() and 0xff
