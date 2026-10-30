@@ -101,8 +101,9 @@ class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scal
         val now = System.currentTimeMillis()
         val previous = readings(1).firstOrNull()
         val composition = BodyMetrics.estimate(reading, profile)
-        if (previous != null && now - previous.measuredAt < 90_000 &&
-            kotlin.math.abs(previous.weightKg - reading.weightKg) <= 0.11) {
+        if (previous != null && MeasurementCooldown.isDuplicate(
+                previous.measuredAt, previous.weightKg, now, reading.weightKg
+            )) {
             if (previous.impedanceOhm == null && reading.impedanceOhm != null) {
                 writableDatabase.update("measurements", values(reading, composition), "id=?",
                     arrayOf(previous.id.toString()))
