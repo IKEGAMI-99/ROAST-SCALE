@@ -377,12 +377,13 @@ private fun Dashboard(
                         fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(12.dp))
                     SlotWeightDisplay(weightKg = state.bleDiagnostics.liveWeightKg)
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        if (state.bleDiagnostics.liveWeightKg == null) "体重の数値を受信しています…"
-                        else "小数第1位から順番にロックオン！",
-                        color = Muted, style = MaterialTheme.typography.bodySmall
-                    )
+                    if (state.bleDiagnostics.liveWeightKg == null) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "体重の数値を受信しています…",
+                            color = Muted, style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
