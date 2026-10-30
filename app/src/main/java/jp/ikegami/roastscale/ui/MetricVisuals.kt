@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -28,11 +29,10 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-private val Green = Color(0xFFB8FF6A)
-private val Pink = Color(0xFFF2A1BF)
-private val Amber = Color(0xFFFFBF70)
-private val Silver = Color(0xFF9EACC1)
-private val PanelBackground = Color(0xFF171E2C)
+private val Green = RoastNeon.lime
+private val Pink = RoastNeon.pink
+private val Amber = RoastNeon.gold
+private val Silver = RoastNeon.muted
 
 private fun number(value: Double?): String =
     if (value == null || !value.isFinite()) "—"
@@ -126,16 +126,22 @@ fun MetricMeter(
             val cy = size.height / 2f
             val thickness = (if (compact) 5.dp else 9.dp).toPx()
             val corner = CornerRadius(thickness / 2f)
-            drawRoundRect(color = Color(0xFF344254),
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    listOf(Color(0xFF26334F), Color(0xFF33466B), Color(0xFF26334F))
+                ),
                 topLeft = Offset(0f, cy - thickness / 2f),
-                size = Size(size.width, thickness), cornerRadius = corner)
+                size = Size(size.width, thickness), cornerRadius = corner
+            )
             if (scale.bandStart != null && scale.bandEnd != null) {
                 val a = scale.relative(scale.bandStart) * size.width
                 val b = scale.relative(scale.bandEnd) * size.width
-                drawRoundRect(color = Green.copy(alpha = 0.85f),
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(listOf(Green, RoastNeon.cyan)),
                     topLeft = Offset(a, cy - thickness / 2f),
                     size = Size((b - a).coerceAtLeast(1f), thickness),
-                    cornerRadius = corner)
+                    cornerRadius = corner
+                )
             } else if (value != null) {
                 // This is a position within the observed trend, not an "ideal".
                 drawRoundRect(color = Color(0xFF516D8E),
@@ -145,7 +151,12 @@ fun MetricMeter(
             }
             if (value != null && value.isFinite()) {
                 val x = scale.relative(value) * size.width
-                drawCircle(Color(0xFF0B0F1A),
+                drawCircle(
+                    stateColor.copy(alpha = 0.17f),
+                    radius = (if (compact) 10.dp else 17.dp).toPx(),
+                    center = Offset(x, cy)
+                )
+                drawCircle(Color(0xFF081122),
                     radius = (if (compact) 6.dp else 10.dp).toPx(),
                     center = Offset(x, cy))
                 drawCircle(stateColor, radius = (if (compact) 4.dp else 7.dp).toPx(),
@@ -208,12 +219,11 @@ fun HistoryCharts(history: List<Measurement>, profile: Profile) {
     val points = if (selected == 0) history.reversed() else history.take(selected).reversed()
     MetricCatalog.all.forEach { metric ->
         val reference = metric.reference(profile)
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = PanelBackground),
-            modifier = Modifier.fillMaxWidth()
+        NeonPanel(
+            modifier = Modifier.fillMaxWidth(),
+            accent = if (metric.key == "weight") RoastNeon.cyan else RoastNeon.violet
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.fillMaxWidth()) {
                 val last = points.lastOrNull()?.let(metric.value)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(metric.label, color = Color.White, fontWeight = FontWeight.Bold,
@@ -284,7 +294,7 @@ private fun LineGraph(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF253449))
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF283659))
             ) {
                 Column(Modifier.padding(12.dp)) {
                     Text(
