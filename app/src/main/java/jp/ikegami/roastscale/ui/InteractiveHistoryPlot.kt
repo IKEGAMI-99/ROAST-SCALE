@@ -24,9 +24,9 @@ data class HistoryPlotPoint(
     val value: Double?
 )
 
-private val Lime = Color(0xFFB8FF6A)
-private val Grid = Color(0xFF354254)
-private val AxisLabel = Color(0xFFABB7C8)
+private val Lime = RoastNeon.cyan
+private val Grid = Color(0xFF354669)
+private val AxisLabel = RoastNeon.muted
 
 private fun xOf(
     timestamp: Long, first: Long, last: Long,
@@ -140,12 +140,20 @@ fun InteractiveHistoryPlot(
                 xOf(point.measuredAt, first, last, left, right),
                 yOf(value, yMin, yMax, top, bottom)
             )
-            previous?.let { drawLine(Lime, it, center, strokeWidth = 2.8.dp.toPx()) }
+            previous?.let {
+                drawLine(Lime.copy(alpha = 0.19f), it, center,
+                    strokeWidth = 8.dp.toPx())
+                drawLine(Lime, it, center, strokeWidth = 2.8.dp.toPx())
+            }
             val isSelected = point.id == selectedId
             if (isSelected) {
+                drawCircle(Lime.copy(alpha = 0.22f),
+                    radius = 13.dp.toPx(), center = center)
                 drawCircle(Color.White, radius = 7.dp.toPx(), center = center)
                 drawCircle(Lime, radius = 4.5.dp.toPx(), center = center)
             } else {
+                drawCircle(Lime.copy(alpha = 0.18f),
+                    radius = 6.5.dp.toPx(), center = center)
                 drawCircle(Lime, radius = 3.5.dp.toPx(), center = center)
             }
             previous = center
