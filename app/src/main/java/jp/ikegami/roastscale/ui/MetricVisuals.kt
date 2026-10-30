@@ -263,47 +263,52 @@ private fun LineGraph(
             color = Silver, style = MaterialTheme.typography.labelSmall)
     }
     Spacer(Modifier.height(8.dp))
-    Canvas(Modifier.fillMaxWidth().height(152.dp)) {
-        val plotLeft = 5.dp.toPx()
-        val plotRight = size.width - 5.dp.toPx()
-        val plotTop = 9.dp.toPx()
-        val plotBottom = size.height - 9.dp.toPx()
-        val plotWidth = (plotRight - plotLeft).coerceAtLeast(1f)
-        val plotHeight = (plotBottom - plotTop).coerceAtLeast(1f)
-        fun xOf(timestamp: Long): Float = if (xMax == xMin) {
-            (plotLeft + plotRight) / 2f
-        } else {
-            (plotLeft + ((timestamp - xMin).toDouble() /
-                (xMax - xMin).toDouble()).toFloat() * plotWidth)
-        }
-        fun yOf(v: Double): Float = plotBottom -
-            ((v - yMin) / (yMax - yMin)).toFloat() * plotHeight
-
-        if (bandMin != null && bandMax != null) {
-            val upper = yOf(bandMax).coerceIn(plotTop, plotBottom)
-            val lower = yOf(bandMin).coerceIn(plotTop, plotBottom)
-            if (lower > upper) {
-                drawRect(Green.copy(alpha = 0.09f),
-                    topLeft = Offset(plotLeft, upper), size = Size(plotWidth, lower - upper))
-            }
-        }
-        repeat(5) { index ->
-            val y = plotTop + plotHeight * index / 4f
-            drawLine(color = Color(0xFF354254), start = Offset(plotLeft, y),
-                end = Offset(plotRight, y), strokeWidth = 1.dp.toPx())
-        }
-        var previous: Offset? = null
-        // Missing BIA values create a genuine gap rather than an invented reading.
-        series.forEach { (timestamp, value) ->
-            if (value == null) {
-                previous = null
-            } else {
-                val point = Offset(xOf(timestamp), yOf(value))
-                previous?.let {
-                    drawLine(Green, it, point, strokeWidth = 2.8.dp.toPx())
+    var selectedId by remember(metric.key) { mutableStateOf<Long?>(null) }
+    InteractiveHistoryPlot(
+        points = rows.map { row ->
+            HistoryPlotPoint(row.id, row.measuredAt, metric.value(row)?.takeIf(Double::isFinite))
+        },
+        yMin = yMin,
+        yMax = yMax,
+        bandMin = bandMin,
+        bandMax = bandMax,
+        selectedId = selectedId,
+        onSelect = { selectedId = it.id },
+        axisDigits = if (metric.key == "bmi" || metric.key == "bone") 2 else 1
+    )
+    val selectedReading = rows.firstOrNull { it.id == selectedId }
+    selectedReading?.let { reading ->
+        val measured = metric.value(reading)?.takeIf(Double::isFinite)
+        if (measured != null) {
+            Spacer(Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF253449))
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN)
+                            .format(Date(reading.measuredAt)),
+                        color = Silver, style = MaterialTheme.typography.labelSmall
+                    )
+                    Text(
+                        metric.label + ": " + number(measured) +
+                            if (metric.unit.isNotBlank()) " " + metric.unit else "",
+                        color = Green, fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (metric.key != "weight") {
+                        Text("体重 " + number(reading.weightKg) + " kg",
+                            color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    }
+                    reading.impedanceOhm?.let { impedance ->
+                        if (metric.key != "impedance") {
+                            Text("インピーダンス " + impedance + " Ω",
+                                color = Silver, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
-                drawCircle(Green, radius = 3.3.dp.toPx(), center = point)
-                previous = point
             }
         }
     }
