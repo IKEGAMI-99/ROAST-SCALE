@@ -5,6 +5,7 @@ Android body-measurement journal for Xiaomi XMTZC02HM BLE smart scales, built wi
 ## Capabilities
 
 - Bluetooth LE weight and impedance, with locally estimated BMI, body-fat percentage, water, muscle, bone and metabolism. No Xiaomi login.
+- Animated BLE receiving display with live weight preview; prevents new duplicate measurement rows for the first 30 seconds after saving, while allowing later impedance data to enrich the saved row.
 - Manual waist circumference (cm), plus automatic waist-to-height ratio from the profile height.
 - Seven-calendar-day rolling mean weight, using only one latest measurement per local day. Missing days are not fabricated.
 - Dashboard with weight, compact two-column metrics, waist and rolling weight average.
