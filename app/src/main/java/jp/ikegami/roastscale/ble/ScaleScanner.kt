@@ -29,7 +29,9 @@ data class BleDiagnostics(
     val connectPermission: Boolean = false,
     val fineLocationPermission: Boolean = false,
     val locationEnabled: Boolean = false,
-    val secondsSinceStart: Int = 0
+    val secondsSinceStart: Int = 0,
+    val lastScaleFrameAtElapsed: Long = 0L,
+    val liveWeightKg: Double? = null
 )
 
 /**
@@ -52,6 +54,8 @@ class ScaleScanner(
     private var validCount = 0
     private var lastEmitAt = 0L
     private var startedAt = 0L
+    private var lastScaleFrameAtElapsed = 0L
+    private var liveWeightKg: Double? = null
     private var lastDevice = ""
     private var lastFrame = ""
     private var lastResult = ""
@@ -126,7 +130,9 @@ class ScaleScanner(
                 connectPermission = Build.VERSION.SDK_INT < 31 || granted(Manifest.permission.BLUETOOTH_CONNECT),
                 fineLocationPermission = granted(Manifest.permission.ACCESS_FINE_LOCATION),
                 locationEnabled = locationOn(),
-                secondsSinceStart = if (running) ((now - startedAt) / 1000L).toInt().coerceAtLeast(0) else 0
+                secondsSinceStart = if (running) ((now - startedAt) / 1000L).toInt().coerceAtLeast(0) else 0,
+                lastScaleFrameAtElapsed = lastScaleFrameAtElapsed,
+                liveWeightKg = liveWeightKg
             )
         )
     }
@@ -145,6 +151,8 @@ class ScaleScanner(
             return
         }
         scaleCount++
+        lastScaleFrameAtElapsed = android.os.SystemClock.elapsedRealtime()
+        liveWeightKg = ScalePacket.previewWeight(frame)
         lastDevice = name + " · RSSI " + result.rssi + " dBm"
         lastFrame = hex(frame)
         val parsed = ScalePacket.decode(frame)
@@ -221,6 +229,8 @@ class ScaleScanner(
             packetCount = 0
             scaleCount = 0
             validCount = 0
+            lastScaleFrameAtElapsed = 0L
+            liveWeightKg = null
             nearby.clear()
             lastDevice = ""
             lastFrame = ""
@@ -258,6 +268,8 @@ class ScaleScanner(
             } catch (_: Exception) { }
         }
         running = false
+        lastScaleFrameAtElapsed = 0L
+        liveWeightKg = null
         handler.removeCallbacks(ticker)
         pendingTask?.let(handler::removeCallbacks)
         pendingTask = null
