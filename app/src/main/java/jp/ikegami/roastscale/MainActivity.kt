@@ -17,6 +17,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
@@ -50,6 +51,11 @@ import jp.ikegami.roastscale.ui.MetricMeter
 import jp.ikegami.roastscale.ui.HistoryCharts
 import jp.ikegami.roastscale.ui.MeasurementCelebrationOverlay
 import jp.ikegami.roastscale.ui.SlotWeightDisplay
+import jp.ikegami.roastscale.ui.NeonBackground
+import jp.ikegami.roastscale.ui.NeonPanel
+import jp.ikegami.roastscale.ui.NeonDivider
+import jp.ikegami.roastscale.ui.NeonSectionHeading
+import jp.ikegami.roastscale.ui.RoastNeon
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,11 +63,13 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
-private val Night = Color(0xFF0B0F1A)
-private val Surface = Color(0xFF171E2C)
-private val Accent = Color(0xFFB8FF6A)
-private val Muted = Color(0xFFABB7C8)
-private val Purple = Color(0xFFC6A8FF)
+private val Night = RoastNeon.night
+private val Surface = RoastNeon.surface
+private val Accent = RoastNeon.lime
+private val Muted = RoastNeon.muted
+private val Purple = RoastNeon.violet
+private val Cyan = RoastNeon.cyan
+private val Pink = RoastNeon.pink
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,26 +140,44 @@ private fun RoastApp(vm: RoastViewModel) {
     }
 
     val colors = darkColorScheme(
-        primary = Accent, onPrimary = Night,
+        primary = Cyan, onPrimary = Night,
         background = Night, surface = Surface,
         onSurface = Color.White, secondary = Purple,
-        onBackground = Color.White
+        tertiary = Pink, onBackground = Color.White
     )
     MaterialTheme(colorScheme = colors) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Night)) {
+        NeonBackground(Modifier.fillMaxSize())
         Scaffold(
-            containerColor = Night,
+            containerColor = Color.Transparent,
             bottomBar = {
-                NavigationBar(containerColor = Color(0xFF111724)) {
-                    listOf("⚖️" to "測定", "📈" to "履歴", "⚙️" to "設定").forEachIndexed { index, item ->
+                NavigationBar(
+                    containerColor = Color(0xF20C142C),
+                    tonalElevation = 0.dp
+                ) {
+                    listOf("⚡" to "測定", "▥" to "履歴", "⚙" to "設定").forEachIndexed { index, item ->
                         NavigationBarItem(
                             selected = page == index,
                             onClick = { page = index },
-                            icon = { Text(item.first) },
-                            label = { Text(item.second) },
+                            icon = {
+                                Text(
+                                    if (page == index) "◆ " + item.first else item.first,
+                                    color = if (page == index) Cyan else Muted,
+                                    fontWeight = FontWeight.Black
+                                )
+                            },
+                            label = {
+                                Text(
+                                    item.second,
+                                    fontWeight = if (page == index) FontWeight.Black
+                                    else FontWeight.Medium
+                                )
+                            },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Accent, selectedTextColor = Accent,
-                                indicatorColor = Color(0xFF293C32)
+                                selectedIconColor = Cyan, selectedTextColor = Cyan,
+                                unselectedIconColor = Muted,
+                                unselectedTextColor = Muted,
+                                indicatorColor = Color(0xFF243557)
                             )
                         )
                     }
@@ -159,13 +185,14 @@ private fun RoastApp(vm: RoastViewModel) {
             }
         ) { padding ->
             Column(
-                modifier = Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFF182337), Night, Night)))
-                    .padding(padding)
+                modifier = Modifier.fillMaxSize().padding(padding)
             ) {
                 state.message?.let { message ->
                     Row(
-                        Modifier.fillMaxWidth().background(Color(0xFF38402C)).padding(horizontal = 12.dp),
+                        Modifier.fillMaxWidth()
+                            .background(Color(0xEE243057))
+                            .border(1.dp, Purple.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(message, Modifier.weight(1f).padding(vertical = 10.dp), color = Color.White)
@@ -191,21 +218,20 @@ private fun RoastApp(vm: RoastViewModel) {
 
 @Composable
 private fun TitleBlock(title: String, subtitle: String) {
-    Column(Modifier.padding(top = 22.dp, bottom = 20.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.ExtraBold, color = Color.White)
-        Spacer(Modifier.height(5.dp))
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted)
-    }
+    NeonSectionHeading(
+        index = if (title == "設定") "03 / CONFIG" else "02 / ARCHIVE",
+        title = title,
+        subtitle = subtitle
+    )
 }
 
 @Composable
-private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface)
-    ) { Column(Modifier.padding(18.dp), content = content) }
+private fun Panel(
+    modifier: Modifier = Modifier,
+    accent: Color = Cyan,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    NeonPanel(modifier = modifier, accent = accent, content = content)
 }
 
 private fun format(value: Double?, suffix: String = ""): String =
@@ -294,25 +320,41 @@ private fun Dashboard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
+                Text(
+                    "R / PERSONAL HEALTH HUD  //  01",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Cyan, fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(4.dp))
                 Text("ROAST SCALE",
                     style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    fontWeight = FontWeight.Black, color = Color.White)
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    if (state.scanning) "● BLEスキャン中" else "YOUR SCALE. YOUR DATA. NO EXCUSES.",
+                    if (receiving) "● LIVE SIGNAL RECEIVED"
+                    else if (state.scanning) "◉ SEARCHING FOR SCALE..."
+                    else "YOUR DATA. YOUR LEVEL UP.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (state.scanning) Accent else Muted
+                    fontWeight = FontWeight.Bold,
+                    color = if (state.scanning) Accent else Purple
                 )
             }
             FilledIconButton(
                 onClick = if (state.scanning) onStop else onStart,
-                modifier = Modifier.size(54.dp),
+                modifier = Modifier.size(60.dp)
+                    .border(
+                        2.dp,
+                        Brush.linearGradient(listOf(Cyan, Purple, Pink)),
+                        CircleShape
+                    ),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = if (state.scanning) Purple else Accent,
                     contentColor = Night
                 )
             ) {
                 Text(if (state.scanning) "停止" else "BLE",
-                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Black)
             }
         }
         if (state.scanning || state.status.startsWith("スキャンエラー") ||
@@ -324,14 +366,14 @@ private fun Dashboard(
         if (state.scanning && !receiving) {
             BleReceivingIndicator(false, null)
         }
-        Panel {
+        Panel(accent = if (receiving) Pink else Cyan) {
             if (receiving) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("● LIVE WEIGHT / 測定中",
-                        style = MaterialTheme.typography.labelMedium, color = Accent,
+                    Text("✦ LIVE WEIGHT / 測定中",
+                        style = MaterialTheme.typography.labelMedium, color = Cyan,
                         fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(12.dp))
                     SlotWeightDisplay(weightKg = state.bleDiagnostics.liveWeightKg)
@@ -345,11 +387,13 @@ private fun Dashboard(
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("CURRENT WEIGHT", style = MaterialTheme.typography.labelMedium, color = Accent)
+                        Text("◆ CURRENT WEIGHT / 最新記録",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold, color = Cyan)
                         Spacer(Modifier.height(10.dp))
                         Text(if (recent == null) "--.- kg" else format(recent.weightKg, " kg"),
                             style = MaterialTheme.typography.displayMedium,
-                            color = Color.White, fontWeight = FontWeight.Black)
+                            color = Accent, fontWeight = FontWeight.Black)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(if (delta == null) "記録なし" else (if (delta > 0) "+" else "") +
@@ -366,7 +410,7 @@ private fun Dashboard(
             Spacer(Modifier.height(12.dp))
             MetricMeter(MetricCatalog.all.first(), recent, state.measurements, state.profile, showTitle = false)
             Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = Color(0xFF334052))
+            NeonDivider()
             Spacer(Modifier.height(10.dp))
             // Two compact meters per row. Weight above remains prominent.
             MetricCatalog.all.drop(1).chunked(2).forEachIndexed { rowIndex, pair ->
@@ -376,23 +420,19 @@ private fun Dashboard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    pair.forEach { metric ->
-                        Card(
+                    pair.forEachIndexed { index, metric ->
+                        NeonPanel(
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFF202B3D)
-                            )
+                            accent = if ((rowIndex + index) % 3 == 0) Cyan
+                                else if ((rowIndex + index) % 3 == 1) Purple else Pink
                         ) {
-                            Box(Modifier.fillMaxWidth().padding(12.dp)) {
-                                MetricMeter(
-                                    metric = metric,
-                                    current = recent,
-                                    history = state.measurements,
-                                    profile = state.profile,
-                                    compact = true
-                                )
-                            }
+                            MetricMeter(
+                                metric = metric,
+                                current = recent,
+                                history = state.measurements,
+                                profile = state.profile,
+                                compact = true
+                            )
                         }
                     }
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -403,8 +443,9 @@ private fun Dashboard(
                 color = Muted, style = MaterialTheme.typography.labelSmall)
         }
 
-        Panel {
-            Text("腹囲・直近7日間の平均", color = Accent, fontWeight = FontWeight.Bold)
+        Panel(accent = Purple) {
+            Text("✦ BODY TREND  /  腹囲・直近7日間の平均",
+                color = Cyan, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(10.dp))
             val mean = HealthTrends.weight7DayAverage(state.measurements)
             val latestWaist = state.waists.firstOrNull()
@@ -449,8 +490,9 @@ private fun Dashboard(
             }
         }
 
-        Panel {
-            Text("ChatGPTにダイエット相談", color = Accent, fontWeight = FontWeight.Bold)
+        Panel(accent = Pink) {
+            Text("✦ INTELLIGENCE  /  ChatGPTにダイエット相談",
+                color = RoastNeon.pink, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(8.dp))
             Text("すべての測定履歴と腹囲をCSVにまとめ、相談用プロンプトと一緒に共有します。",
                 color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -592,8 +634,9 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
         verticalArrangement = Arrangement.spacedBy(15.dp)
     ) {
         TitleBlock("設定", "データ共有は操作した時のみ")
-        Panel {
-            Text("測定プロフィール", color = Accent, fontWeight = FontWeight.Bold)
+        Panel(accent = Cyan) {
+            Text("◆ PROFILE  /  測定プロフィール", color = Cyan,
+                fontWeight = FontWeight.Black)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = height, onValueChange = { height = it.filter(Char::isDigit).take(3) },
@@ -623,8 +666,9 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
             ) { Text("プロフィールを保存") }
         }
 
-        Panel {
-            Text("CSVバックアップの復元", color = Accent, fontWeight = FontWeight.Bold)
+        Panel(accent = Purple) {
+            Text("◆ DATA VAULT  /  CSVバックアップの復元", color = Purple,
+                fontWeight = FontWeight.Black)
             Spacer(Modifier.height(8.dp))
             Text("ROAST SCALEから書き出したCSVを読み込み、体重・体組成・腹囲の履歴を追加します。既存データは削除せず、同じ日時と値の記録は重複登録しません。",
                 color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -637,8 +681,9 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
                 color = Muted, style = MaterialTheme.typography.labelSmall)
         }
 
-        Panel {
-            Text("GitHub Releases / アプリ更新", color = Accent, fontWeight = FontWeight.Bold)
+        Panel(accent = Pink) {
+            Text("◆ SYSTEM UPDATE  /  アプリ更新",
+                color = Pink, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(8.dp))
             Text("現在: v" + BuildConfig.VERSION_NAME, color = Muted)
             if (BuildConfig.DEBUG) {
