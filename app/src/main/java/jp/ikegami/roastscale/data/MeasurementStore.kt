@@ -146,6 +146,74 @@ class MeasurementStore(context: Context) : SQLiteOpenHelper(context, "roast-scal
     @Synchronized fun deleteWaist(id: Long): Boolean =
         writableDatabase.delete("waist_measurements", "id=?", arrayOf(id.toString())) == 1
 
+    data class ImportSummary(
+        val addedWeights: Int, val addedWaists: Int, val skippedDuplicates: Int
+    )
+
+    /**
+     * Append validated backup rows atomically. The exported CSV has second
+     * resolution and 3-decimal values; normalize existing millisecond timestamps
+     * and measurement precision before checking duplicates.
+     */
+    @Synchronized fun importCsv(data: HealthImport.Data): ImportSummary {
+        val db = writableDatabase
+        var addedWeights = 0
+        var addedWaists = 0
+        var skipped = 0
+        fun key(at: Long, value: Double): Pair<Long, Long> =
+            at / 1000L to Math.round(value * 1000.0)
+        db.beginTransaction()
+        try {
+            val weightKeys = hashSetOf<Pair<Long, Long>>()
+            db.rawQuery("SELECT measured_at, weight_kg FROM measurements", null).use { cursor ->
+                while (cursor.moveToNext()) weightKeys += key(cursor.getLong(0), cursor.getDouble(1))
+            }
+            val waistKeys = hashSetOf<Pair<Long, Long>>()
+            db.rawQuery("SELECT measured_at, waist_cm FROM waist_measurements", null).use { cursor ->
+                while (cursor.moveToNext()) waistKeys += key(cursor.getLong(0), cursor.getDouble(1))
+            }
+
+            for (entry in data.weights) {
+                if (!weightKeys.add(key(entry.measuredAt, entry.weightKg))) {
+                    skipped++
+                    continue
+                }
+                val fields = ContentValues().apply {
+                    put("measured_at", entry.measuredAt)
+                    put("weight_kg", entry.weightKg)
+                    entry.impedanceOhm?.let { put("impedance_ohm", it) }
+                    entry.composition?.let { comp ->
+                        put("bmi", comp.bmi)
+                        comp.fatPercent?.let { put("fat_percent", it) }
+                        comp.waterPercent?.let { put("water_percent", it) }
+                        comp.muscleKg?.let { put("muscle_kg", it) }
+                        comp.boneKg?.let { put("bone_kg", it) }
+                        comp.proteinPercent?.let { put("protein_percent", it) }
+                        comp.visceralIndex?.let { put("visceral_index", it) }
+                        comp.bmrKcal?.let { put("bmr_kcal", it) }
+                    }
+                }
+                db.insertOrThrow("measurements", null, fields)
+                addedWeights++
+            }
+            for (entry in data.waists) {
+                if (!waistKeys.add(key(entry.measuredAt, entry.waistCm))) {
+                    skipped++
+                    continue
+                }
+                db.insertOrThrow("waist_measurements", null, ContentValues().apply {
+                    put("measured_at", entry.measuredAt)
+                    put("waist_cm", entry.waistCm)
+                })
+                addedWaists++
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return ImportSummary(addedWeights, addedWaists, skipped)
+    }
+
     @Synchronized fun saveComment(id: Long, comment: String) {
         writableDatabase.update("measurements", ContentValues().apply { put("comment", comment) },
             "id=?", arrayOf(id.toString()))

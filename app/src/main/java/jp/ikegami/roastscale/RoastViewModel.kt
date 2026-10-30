@@ -1,11 +1,13 @@
 package jp.ikegami.roastscale
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import jp.ikegami.roastscale.ble.BleDiagnostics
 import jp.ikegami.roastscale.ble.ScaleScanner
 import jp.ikegami.roastscale.data.Measurement
+import jp.ikegami.roastscale.data.HealthImport
 import jp.ikegami.roastscale.data.MeasurementStore
 import jp.ikegami.roastscale.data.Profile
 import jp.ikegami.roastscale.data.ScaleReading
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.ByteArrayOutputStream
 
 data class RoastUiState(
     val profile: Profile = Profile(),
@@ -132,6 +135,46 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
         }
         settings.saveProfile(profile)
         _state.update { it.copy(profile = profile, message = "プロフィールを保存しました") }
+    }
+
+    fun importCsv(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val (summary, history) = withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val bytes = ByteArrayOutputStream()
+                    val input = app.contentResolver.openInputStream(uri)
+                        ?: throw IllegalArgumentException("ファイルを開けません")
+                    input.use { stream ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val count = stream.read(buffer)
+                            if (count < 0) break
+                            if (bytes.size() + count > 10 * 1024 * 1024) {
+                                throw IllegalArgumentException("CSVは10MB以内にしてください")
+                            }
+                            bytes.write(buffer, 0, count)
+                        }
+                    }
+                    val data = HealthImport.parse(bytes.toString(Charsets.UTF_8.name()))
+                    val result = db.importCsv(data)
+                    result to (db.readings() to db.waists())
+                }
+                _state.update {
+                    it.copy(
+                        measurements = history.first,
+                        waists = history.second,
+                        message = "CSV読込完了: 体重" + summary.addedWeights +
+                            "件、腹囲" + summary.addedWaists +
+                            "件を追加（重複" + summary.skippedDuplicates + "件を除外）"
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(message = "CSV読込失敗: " + (e.message ?: "ファイルを確認してください"))
+                }
+            }
+        }
     }
 
     fun shareChatGPT() {

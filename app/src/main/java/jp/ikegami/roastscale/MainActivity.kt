@@ -454,6 +454,9 @@ private fun HistoryScreen(
 
 @Composable
 private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
+    val csvPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(vm::importCsv) }
     var height by remember(state.profile.heightCm) {
         mutableStateOf(state.profile.heightCm.takeIf { it > 0 }?.toString() ?: "")
     }
@@ -496,6 +499,20 @@ private fun SettingsScreen(state: RoastUiState, vm: RoastViewModel) {
                     vm.saveProfile(Profile(height.toIntOrNull() ?: 0, age.toIntOrNull() ?: 0, sex))
                 }
             ) { Text("プロフィールを保存") }
+        }
+
+        Panel {
+            Text("CSVバックアップの復元", color = Accent, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("ROAST SCALEから書き出したCSVを読み込み、体重・体組成・腹囲の履歴を追加します。既存データは削除せず、同じ日時と値の記録は重複登録しません。",
+                color = Muted, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { csvPicker.launch(arrayOf("*/*")) }
+            ) { Text("CSVファイルを選んでインポート") }
+            Text("端末内のファイルだけを読み込みます（10MB・最大50,000件）。",
+                color = Muted, style = MaterialTheme.typography.labelSmall)
         }
 
         Panel {
