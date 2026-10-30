@@ -19,8 +19,8 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-private val Lime = Color(0xFFB8FF6A)
-private val Secondary = Color(0xFFABB7C8)
+private val Lime = RoastNeon.lime
+private val Secondary = RoastNeon.muted
 
 /** Additional history graphs reuse the same axis and tap interaction as BIA graphs. */
 @Composable
@@ -74,12 +74,11 @@ private fun SingleLineCard(
     unit: String,
     axisDigits: Int = 1
 ) {
-    Card(
+    NeonPanel(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF171E2C))
+        accent = if (threshold != null) RoastNeon.pink else RoastNeon.cyan
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth()) {
             Text(title, color = Color.White, fontWeight = FontWeight.Bold)
             Text(subtitle, color = Secondary, style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))
@@ -122,7 +121,7 @@ private fun SingleLineCard(
             valid.firstOrNull { it.id == selectedId }?.let { reading ->
                 Spacer(Modifier.height(8.dp))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF253449)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF283659)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
