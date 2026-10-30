@@ -54,7 +54,8 @@ class RoastViewModel(app: Application) : AndroidViewModel(app) {
                 !status.startsWith("スキャンエラー") &&
                 !status.startsWith("BluetoothがOFF") &&
                 !status.startsWith("測定停止") &&
-                !status.startsWith("BLE受信ゼロ")) }
+                !status.startsWith("スキャン開始失敗") &&
+                !status.startsWith("Bluetooth権限が拒否")) }
         },
         { diagnostic -> _state.update { it.copy(bleDiagnostics = diagnostic) } }
     )
