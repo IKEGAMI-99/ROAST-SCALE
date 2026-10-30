@@ -48,6 +48,8 @@ import jp.ikegami.roastscale.data.WaistEntry
 import jp.ikegami.roastscale.ui.HealthExtraCharts
 import jp.ikegami.roastscale.ui.MetricMeter
 import jp.ikegami.roastscale.ui.HistoryCharts
+import jp.ikegami.roastscale.ui.MeasurementCelebrationOverlay
+import jp.ikegami.roastscale.ui.SlotWeightDisplay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,6 +78,22 @@ private fun RoastApp(vm: RoastViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var page by remember { mutableIntStateOf(0) }
+    // Reception is based on actual BLE scale frames, not merely on scanning.
+    // Cancel the 4-second grace period each time a fresh scale frame arrives.
+    val lastFrameAt = state.bleDiagnostics.lastScaleFrameAtElapsed
+    var receiving by remember { mutableStateOf(false) }
+    LaunchedEffect(state.scanning, lastFrameAt) {
+        if (!state.scanning) {
+            receiving = false
+            return@LaunchedEffect
+        }
+        val ageMs = android.os.SystemClock.elapsedRealtime() - lastFrameAt
+        if (lastFrameAt > 0L && ageMs in 0L until 4_000L) {
+            receiving = true
+            delay(4_000L - ageMs)
+        }
+        receiving = false
+    }
     // Request both approximate + precise on Android 12+; requesting precise
     // alone can be ignored. BLUETOOTH_CONNECT covers BluetoothAdapter.isEnabled.
     val required = remember {
@@ -120,6 +138,7 @@ private fun RoastApp(vm: RoastViewModel) {
         onBackground = Color.White
     )
     MaterialTheme(colorScheme = colors) {
+        Box(Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = Night,
             bottomBar = {
@@ -154,11 +173,18 @@ private fun RoastApp(vm: RoastViewModel) {
                     }
                 }
                 when (page) {
-                    0 -> Dashboard(state, requestScan, vm::stopScan, vm)
+                    0 -> Dashboard(state, requestScan, vm::stopScan, vm, receiving)
                     1 -> HistoryScreen(state.measurements, state.waists, state.profile, vm::deleteMeasurement, vm::deleteWaist)
                     else -> SettingsScreen(state, vm)
                 }
             }
+        }
+        // Particle effects span the entire screen, including the navigation bar.
+        // Canvas consumes no taps and disappears when data stops arriving.
+        MeasurementCelebrationOverlay(
+            active = page == 0 && state.scanning && receiving,
+            modifier = Modifier.fillMaxSize()
+        )
         }
     }
 }
@@ -224,12 +250,13 @@ private fun BleReceivingIndicator(receiving: Boolean, weightKg: Double?) {
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        if (receiving && weightKg != null) format(weightKg) else "BLE",
+                        if (receiving) "LIVE" else "BLE",
                         color = Color.White, fontWeight = FontWeight.Black,
                         style = MaterialTheme.typography.headlineLarge
                     )
                     if (receiving && weightKg != null) {
-                        Text("kg", color = tone, style = MaterialTheme.typography.labelLarge)
+                        Text("● LIVE DATA", color = tone,
+                            style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -246,7 +273,13 @@ private fun BleReceivingIndicator(receiving: Boolean, weightKg: Double?) {
 }
 
 @Composable
-private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Unit, vm: RoastViewModel) {
+private fun Dashboard(
+    state: RoastUiState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    vm: RoastViewModel,
+    receiving: Boolean
+) {
     val context = LocalContext.current
     val recent = state.measurements.firstOrNull()
     val previous = state.measurements.getOrNull(1)
@@ -287,36 +320,45 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
             Text(state.status, color = Muted, style = MaterialTheme.typography.bodySmall)
         }
         if (state.scanning) {
-            val lastFrameAt = state.bleDiagnostics.lastScaleFrameAtElapsed
-            var receiving by remember { mutableStateOf(false) }
-            LaunchedEffect(lastFrameAt) {
-                val ageMs = android.os.SystemClock.elapsedRealtime() - lastFrameAt
-                if (lastFrameAt > 0L && ageMs in 0L until 4_000L) {
-                    receiving = true
-                    delay(4_000L - ageMs)
-                }
-                receiving = false
-            }
             BleReceivingIndicator(receiving, state.bleDiagnostics.liveWeightKg)
         }
         Panel {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("CURRENT WEIGHT", style = MaterialTheme.typography.labelMedium, color = Accent)
+            if (receiving) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("● LIVE WEIGHT / 測定中",
+                        style = MaterialTheme.typography.labelMedium, color = Accent,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    SlotWeightDisplay(weightKg = state.bleDiagnostics.liveWeightKg)
                     Spacer(Modifier.height(10.dp))
-                    Text(if (recent == null) "--.- kg" else format(recent.weightKg, " kg"),
-                        style = MaterialTheme.typography.displayMedium,
-                        color = Color.White, fontWeight = FontWeight.Black)
+                    Text(
+                        if (state.bleDiagnostics.liveWeightKg == null) "体重の数値を受信しています…"
+                        else "小数第1位から順番にロックオン！",
+                        color = Muted, style = MaterialTheme.typography.bodySmall
+                    )
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(if (delta == null) "記録なし" else (if (delta > 0) "+" else "") +
-                        format(delta, " kg"),
-                        color = when {
-                            delta == null -> Muted
-                            abs(delta) <= 0.1 -> Accent
-                            else -> Purple
-                        }, fontWeight = FontWeight.Bold)
-                    Text("前回比", style = MaterialTheme.typography.labelSmall, color = Muted)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("CURRENT WEIGHT", style = MaterialTheme.typography.labelMedium, color = Accent)
+                        Spacer(Modifier.height(10.dp))
+                        Text(if (recent == null) "--.- kg" else format(recent.weightKg, " kg"),
+                            style = MaterialTheme.typography.displayMedium,
+                            color = Color.White, fontWeight = FontWeight.Black)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(if (delta == null) "記録なし" else (if (delta > 0) "+" else "") +
+                            format(delta, " kg"),
+                            color = when {
+                                delta == null -> Muted
+                                abs(delta) <= 0.1 -> Accent
+                                else -> Purple
+                            }, fontWeight = FontWeight.Bold)
+                        Text("前回比", style = MaterialTheme.typography.labelSmall, color = Muted)
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
