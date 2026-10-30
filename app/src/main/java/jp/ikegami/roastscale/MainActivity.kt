@@ -319,8 +319,10 @@ private fun Dashboard(
             state.status.startsWith("BLE受信ゼロ")) {
             Text(state.status, color = Muted, style = MaterialTheme.typography.bodySmall)
         }
-        if (state.scanning) {
-            BleReceivingIndicator(receiving, state.bleDiagnostics.liveWeightKg)
+        // While packets are arriving, show the much larger slot readout first.
+        // The idle BLE indicator would otherwise push the reels below the fold.
+        if (state.scanning && !receiving) {
+            BleReceivingIndicator(false, null)
         }
         Panel {
             if (receiving) {
