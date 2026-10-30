@@ -28,6 +28,16 @@ class ScalePacketTest {
         assertEquals(396, reading.impedanceOhm)
     }
 
+    @Test fun canPreviewWeightBeforeStabilization() {
+        val bytes = byteArrayOf(
+            0x02, 0x00, 0xEA.toByte(), 0x07, 0x0A, 0x1B, 0x10, 0x00,
+            0x00, 0x30, 0x02, 0xC8.toByte(), 0x32
+        )
+        assertNull(ScalePacket.decode(bytes))
+        assertEquals(65.0, ScalePacket.previewWeight(bytes)!!, 0.001)
+        assertNull(ScalePacket.previewWeight(ByteArray(12)))
+    }
+
     @Test fun rejectsUnstableAndInvalid() {
         assertNull(ScalePacket.decode(byteArrayOf(0x02, 0x00) + ByteArray(11)))
         assertNull(ScalePacket.decode(ByteArray(12)))
