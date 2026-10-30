@@ -11,11 +11,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -24,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +53,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 private val Night = Color(0xFF0B0F1A)
 private val Surface = Color(0xFF171E2C)
@@ -180,6 +188,63 @@ private fun format(value: Double?, suffix: String = ""): String =
 private fun date(millis: Long): String =
     SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(Date(millis))
 
+/** The large pulse appears only when data actually arrives from the scale. */
+@Composable
+private fun BleReceivingIndicator(receiving: Boolean, weightKg: Double?) {
+    val pulse by rememberInfiniteTransition(label = "bleReceive").animateFloat(
+        initialValue = 1f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "receivePulse"
+    )
+    val tone = if (receiving) Accent else Muted
+    Panel {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                if (receiving) "● 体組成計からデータ受信中" else "体組成計のデータを待機中",
+                color = tone, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.size(156.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(136.dp).graphicsLayer {
+                        scaleX = if (receiving) pulse else 1f
+                        scaleY = if (receiving) pulse else 1f
+                    }.background(tone.copy(alpha = 0.12f), CircleShape)
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier.size(132.dp),
+                    color = tone,
+                    trackColor = tone.copy(alpha = 0.16f),
+                    strokeWidth = 7.dp
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (receiving && weightKg != null) format(weightKg) else "BLE",
+                        color = Color.White, fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.headlineLarge
+                    )
+                    if (receiving && weightKg != null) {
+                        Text("kg", color = tone, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                if (receiving) "測定値を受信しています。安定したら自動保存します"
+                else "体組成計に乗って、測定が終わるまでお待ちください",
+                color = Muted, style = MaterialTheme.typography.bodySmall
+            )
+            Text("保存後30秒間は重複登録を防止します",
+                color = Muted, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
 @Composable
 private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Unit, vm: RoastViewModel) {
     val context = LocalContext.current
@@ -200,7 +265,7 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.ExtraBold, color = Color.White)
                 Text(
-                    if (state.scanning) "● BLE受信中" else "YOUR SCALE. YOUR DATA. NO EXCUSES.",
+                    if (state.scanning) "● BLEスキャン中" else "YOUR SCALE. YOUR DATA. NO EXCUSES.",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (state.scanning) Accent else Muted
                 )
@@ -220,6 +285,19 @@ private fun Dashboard(state: RoastUiState, onStart: () -> Unit, onStop: () -> Un
         if (state.scanning || state.status.startsWith("スキャンエラー") ||
             state.status.startsWith("BLE受信ゼロ")) {
             Text(state.status, color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        if (state.scanning) {
+            val lastFrameAt = state.bleDiagnostics.lastScaleFrameAtElapsed
+            var receiving by remember { mutableStateOf(false) }
+            LaunchedEffect(lastFrameAt) {
+                val ageMs = android.os.SystemClock.elapsedRealtime() - lastFrameAt
+                if (lastFrameAt > 0L && ageMs in 0L until 4_000L) {
+                    receiving = true
+                    delay(4_000L - ageMs)
+                }
+                receiving = false
+            }
+            BleReceivingIndicator(receiving, state.bleDiagnostics.liveWeightKg)
         }
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {
